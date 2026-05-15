@@ -1,0 +1,118 @@
+# Docker Compose para desarrollo
+# Inicia FastAPI + PostgreSQL + Redis con recarga en caliente y montaje de volúmenes.
+# NO apto para producción: utilice docker-compose.prod.yml.
+
+name: secureauth-dev
+
+services:
+
+  # ── PostgreSQL 15 ──────────────────────────────────────────────────────────
+  db:
+    image: postgres:15-alpine
+    container_name: secureauth_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-secureauth}
+      # Permite registros de consultas detallados, útiles durante el desarrollo.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --locale=C"
+    volumes:
+      # Volumen con nombre: los datos persisten incluso después de reiniciar el contenedor.
+      - postgres_data:/var/lib/postgresql/data
+      # Opcional: coloque aquí los scripts de inicialización .sql y se ejecutarán al iniciar por primera vez.
+      - ./scripts/db:/docker-entrypoint-initdb.d:ro
+    ports:
+      # Expóngalo al host para que pueda conectarse con psql, DBeaver, etc.
+      # En producción, este puerto NO está expuesto; solo se permite el acceso a la red interna.
+      - "5432:5432"
+    networks:
+      - secureauth_network
+    healthcheck:
+      # pg_isready comprueba que PostgreSQL esté aceptando conexiones.
+      # Esto evita que FastAPI falle al iniciarse porque la base de datos
+      # aún no está lista, un problema muy común en Docker.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-secureauth}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # ── Redis 7 ────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: secureauth_redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD:-redispassword}
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --appendonly yes
+    # maxmemory-policy allkeys-lru: cuando la memoria está llena, expulsar las claves menos
+    # utilizadas recientemente. Útil para casos de uso de caché (límites de velocidad, listas negras).
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - secureauth_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redispassword}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  # ── FastAPI Application ────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      # Construye la etapa de 'tiempo de ejecución' (no la etapa de compilación completa).
+      target: runtime
+    container_name: secureauth_api
+    restart: unless-stopped
+    # En desarrollo: anular CMD para habilitar recarga en caliente
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    environment:
+      APP_ENV: development
+      DEBUG: "true"
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-secureauth}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redispassword}@redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-change-in-prod}
+      CORS_ORIGINS: '["http://localhost:3000","http://localhost:8000"]'
+    volumes:
+      # Montar el código fuente para la recarga en caliente durante el desarrollo.
+      # El contenedor detecta tus cambios locales al instante sin necesidad de reconstruirlo.
+      - ./app:/app/app:ro
+    ports:
+      - "8000:8000"
+    networks:
+      - secureauth_network
+    depends_on:
+      # 'service_healthy' significa que Docker espera a que la comprobación de estado sea exitosa.
+      # no solo para que el contenedor se inicie. Esta es la forma correcta de hacerlo.
+      # gestionar los pedidos de inicio.
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+# ── Named Volumes ─────────────────────────────────────────────────────────────
+# Los volúmenes con nombre almacenan los datos en el host de Docker.
+# 'docker compose down' NO los elimina; necesitas 'docker compose down -v'.
+volumes:
+  postgres_data:
+    name: secureauth_postgres_data
+  redis_data:
+    name: secureauth_redis_data
+
+# ── Internal Network ──────────────────────────────────────────────────────────
+# Todos los servicios se comunican a través de esta red privada.
+# La base de datos y Redis NO son accesibles desde el exterior; solo el contenedor de la API puede comunicarse con ellos.
+# Esta es una barrera de seguridad fundamental.
+networks:
+  secureauth_network:
+    name: secureauth_network
+    driver: bridge

@@ -1,0 +1,55 @@
+# Python cache — never needed inside the image
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environment — we build a fresh one inside Docker
+.venv/
+venv/
+
+# Environment files — NEVER bake secrets into the image
+.env
+.env.*
+!.env.example
+
+# RSA Keys — NEVER inside an image
+keys/
+*.pem
+
+# Development artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+*.egg-info/
+dist/
+build/
+
+# Version control
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+
+# Docker files themselves (not needed inside the container)
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Documentation
+!README.md
+docs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# CI
+.github/
+
+# Scripts (only needed on host for setup)
+scripts/

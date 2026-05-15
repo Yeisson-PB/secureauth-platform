@@ -1,0 +1,76 @@
+# Prueba con Docker Compose
+# Crea instancias limpias y efímeras de base de datos y Redis para el conjunto de pruebas.
+# Utilizado por: 'make test' y GitHub Actions CI.
+# Diferencia clave con respecto al entorno de desarrollo: sin montaje de volúmenes, tmpfs para mayor velocidad, sin exposición de puertos.
+
+name: secureauth-test
+
+services:
+
+  db_test:
+    image: postgres:15-alpine
+    container_name: secureauth_db_test
+    environment:
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: secureauth_test
+    # tmpfs: almacena los datos en la RAM en lugar del disco.
+    # Las pruebas se ejecutan más rápido y los datos se borran automáticamente cuando el contenedor se detiene.
+    # Ideal para CI: no requiere limpieza.
+    tmpfs:
+      - /var/lib/postgresql/data
+    networks:
+      - secureauth_test_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test -d secureauth_test"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  redis_test:
+    image: redis:7-alpine
+    container_name: secureauth_redis_test
+    # Sin contraseña en el entorno de prueba: configuración de prueba más sencilla
+    command: redis-server --maxmemory 64mb --maxmemory-policy allkeys-lru
+    tmpfs:
+      - /data
+    networks:
+      - secureauth_test_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+
+  api_test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder  # Usar la etapa del constructor para que las dependencias de desarrollo (pytest) están disponibles
+    container_name: secureauth_api_test
+    # Sobrescribir el punto de entrada para ejecutar pytest en lugar de uvicorn
+    command: >
+      uv run pytest tests/
+      --cov=app
+      --cov-report=term-missing
+      --cov-report=xml:/app/coverage.xml
+      -v
+    environment:
+      APP_ENV: test
+      DATABASE_URL: postgresql+asyncpg://test:test@db_test:5432/secureauth_test
+      REDIS_URL: redis://redis_test:6379/0
+      SECRET_KEY: test-secret-key-not-for-production
+    volumes:
+      # Montar el informe de cobertura para que sea accesible en el host una vez finalizadas las pruebas.
+      - ./coverage.xml:/app/coverage.xml
+    networks:
+      - secureauth_test_network
+    depends_on:
+      db_test:
+        condition: service_healthy
+      redis_test:
+        condition: service_healthy
+
+networks:
+  secureauth_test_network:
+    driver: bridge
