@@ -5,14 +5,14 @@
 **Autenticación y autorización open-source como servicio.**
 Alternativa autoalojable a Auth0, Okta y Keycloak — diseñada para producción.
 
-[![CI Pipeline](https://github.com/yourusername/secureauth-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/yourusername/secureauth-platform/actions)
+[![CI Pipeline](https://github.com/Yeisson-PB/secureauth-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/Yeisson-PB/secureauth-platform/actions)
 [![Coverage](https://img.shields.io/badge/coverage-80%25+-brightgreen)](./coverage.xml)
 [![Python](https://img.shields.io/badge/python-3.11+-blue)](https://www.python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688)](https://fastapi.tiangolo.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![OWASP](https://img.shields.io/badge/OWASP-Top%2010%20Compliant-red)](https://owasp.org/www-project-top-ten/)
 
-[**Docs en vivo →**](http://localhost:8000/docs) · [**Reportar un error**](https://github.com/yourusername/secureauth-platform/issues) · [**Solicitar una función**](https://github.com/yourusername/secureauth-platform/issues)
+[**Docs en vivo →**](http://localhost:8000/docs) · [**Reportar un error**](https://github.com/Yeisson-PB/secureauth-platform/issues) · [**Solicitar una función**](https://github.com/Yeisson-PB/secureauth-platform/issues)
 
 </div>
 
