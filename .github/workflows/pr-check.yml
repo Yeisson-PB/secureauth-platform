@@ -1,0 +1,106 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Pull Request Checks
+# Validates PR conventions and checks for accidentally committed secrets.
+# Only runs on pull requests — not on direct pushes.
+# ─────────────────────────────────────────────────────────────────────────────
+name: PR Checks
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+jobs:
+  # ── Conventional Commits title check ─────────────────────────────────────────
+  # Enforces that PR titles follow Conventional Commits format.
+  # This ensures the merge commit message is clean and parseable.
+  conventional-title:
+    name: Conventional Commit Title
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check PR title format
+        uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # Valid types matching our commit convention
+          types: |
+            feat
+            fix
+            security
+            docs
+            test
+            ci
+            chore
+            refactor
+            perf
+          requireScope: false
+          subjectPattern: ^(?![A-Z]).+$
+          subjectPatternError: |
+            The PR title must start with a lowercase letter.
+            Example: "feat(auth): implement JWT refresh token rotation"
+
+  # ── Secret leak detection ─────────────────────────────────────────────────────
+  # Scans the diff of the PR for accidentally committed secrets.
+  # Catches API keys, passwords, private keys before they reach main.
+  secret-scan:
+    name: Secret Leak Detection
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          # Fetch full history so we can diff against the base branch
+          fetch-depth: 0
+
+      - name: Run Gitleaks secret scanner
+        # Gitleaks scans git history and diffs for secrets using regex patterns.
+        # Detects: AWS keys, GitHub tokens, private keys, passwords, JWT secrets, etc.
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+          # GITLEAKS_LICENSE is optional — needed only for the cloud reporting feature.
+          # The scanner works fine without it.
+
+  # ── File safety check ─────────────────────────────────────────────────────────
+  # Ensures no sensitive files are accidentally included in the PR diff.
+  file-safety:
+    name: Sensitive File Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check for sensitive files in diff
+        run: |
+          # List of patterns that should NEVER be committed
+          FORBIDDEN_PATTERNS=(
+            "\.env$"
+            "\.env\."
+            "private\.pem$"
+            "private_key\.pem$"
+            "id_rsa$"
+            "\.p12$"
+            "\.pfx$"
+            "secrets\.yaml$"
+            "secrets\.yml$"
+          )
+
+          FOUND=0
+          for pattern in "${FORBIDDEN_PATTERNS[@]}"; do
+            matches=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -E "$pattern" || true)
+            if [ -n "$matches" ]; then
+              echo "❌ Forbidden file pattern '$pattern' found:"
+              echo "$matches"
+              FOUND=1
+            fi
+          done
+
+          if [ $FOUND -eq 1 ]; then
+            echo ""
+            echo "🚨 Sensitive files detected in this PR."
+            echo "Please remove them and rotate any exposed secrets immediately."
+            exit 1
+          else
+            echo "✅ No sensitive files detected in diff."
+          fi
