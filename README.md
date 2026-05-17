@@ -2,8 +2,8 @@
 
 # 🔐 SecureAuth Platform
 
-**Autenticación y autorización open-source como servicio.**
-Alternativa autoalojable a Auth0, Okta y Keycloak — diseñada para producción.
+**Open-source authentication and authorization as a service.**
+Self-hostable alternative to Auth0, Okta, and Keycloak — built for production.
 
 [![CI Pipeline](https://github.com/Yeisson-PB/secureauth-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/Yeisson-PB/secureauth-platform/actions)
 [![Coverage](https://img.shields.io/badge/coverage-80%25+-brightgreen)](./coverage.xml)
@@ -12,303 +12,303 @@ Alternativa autoalojable a Auth0, Okta y Keycloak — diseñada para producción
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![OWASP](https://img.shields.io/badge/OWASP-Top%2010%20Compliant-red)](https://owasp.org/www-project-top-ten/)
 
-[**Docs en vivo →**](http://localhost:8000/docs) · [**Reportar un error**](https://github.com/Yeisson-PB/secureauth-platform/issues) · [**Solicitar una función**](https://github.com/Yeisson-PB/secureauth-platform/issues)
+[**Live Docs →**](http://localhost:8000/docs) · [**Report a Bug**](https://github.com/Yeisson-PB/secureauth-platform/issues) · [**Request a Feature**](https://github.com/Yeisson-PB/secureauth-platform/issues)
 
 </div>
 
 ---
 
-## ✨ Funcionalidades
+## ✨ Features
 
-| Funcionalidad | Estado | Descripción |
+| Feature | Status | Description |
 |---|---|---|
-| 📧 Autenticación Email / Contraseña | ✅ Listo | Registro y acceso seguros con bcrypt (12 rondas) |
-| 🔑 JWT RS256 | ✅ Listo | Firma asimétrica — clave pública verificable por cualquier servicio |
-| 🔄 Rotación de Refresh Token | ✅ Listo | Cada uso genera un nuevo token e invalida el anterior |
-| 🚫 Lista negra de tokens | ✅ Listo | Lista negra en Redis con expiración TTL automática |
-| 📱 MFA / TOTP | ✅ Listo | Compatible con Google Authenticator, con códigos de recuperación |
-| 🌐 OAuth2 — Google | ✅ Listo | Inicio de sesión social con Google |
-| 🐙 OAuth2 — GitHub | ✅ Listo | Inicio de sesión social con GitHub |
-| 🛡️ Limitación de tasa | ✅ Listo | Ventana deslizante por IP y por usuario (Redis) |
-| 🔒 Protección contra fuerza bruta | ✅ Listo | Bloqueo progresivo: 5 intentos → 15 min de bloqueo |
-| 🖥️ Gestión de sesiones | ✅ Listo | Listar y revocar sesiones activas por dispositivo |
-| 📋 Registros de auditoría | ✅ Listo | Registros inmutables en modo append-only: quién, qué, cuándo, desde dónde |
-| 👑 API de administración | ✅ Listo | Gestionar usuarios, sesiones y auditoría vía REST |
-| 🔐 Cabeceras de seguridad | ✅ Listo | HSTS, CSP, X-Frame-Options, X-Content-Type-Options |
-| 📖 OpenAPI / Swagger | ✅ Listo | Siempre disponible en `/docs` con ejemplos completos de request/response |
+| 📧 Email / Password Auth | ✅ Ready | Secure registration and login with bcrypt (12 rounds) |
+| 🔑 JWT RS256 | ✅ Ready | Asymmetric signing — public key verifiable by any service |
+| 🔄 Refresh Token Rotation | ✅ Ready | Each use generates a new token and invalidates the previous |
+| 🚫 Token Blacklist | ✅ Ready | Redis-backed blacklist with automatic TTL expiry |
+| 📱 MFA / TOTP | ✅ Ready | Google Authenticator compatible, with recovery codes |
+| 🌐 OAuth2 — Google | ✅ Ready | Social login with Google |
+| 🐙 OAuth2 — GitHub | ✅ Ready | Social login with GitHub |
+| 🛡️ Rate Limiting | ✅ Ready | Sliding window per IP and per user (Redis) |
+| 🔒 Brute Force Protection | ✅ Ready | Progressive lockout: 5 attempts → 15 min block |
+| 🖥️ Session Management | ✅ Ready | List and revoke active sessions by device |
+| 📋 Audit Logs | ✅ Ready | Immutable append-only logs: who, what, when, from where |
+| 👑 Admin API | ✅ Ready | Manage users, sessions, and audit logs via REST |
+| 🔐 Security Headers | ✅ Ready | HSTS, CSP, X-Frame-Options, X-Content-Type-Options |
+| 📖 OpenAPI / Swagger | ✅ Ready | Always-on at `/docs` with full request/response examples |
 
 ---
 
-## 🏗️ Arquitectura
+## 🏗️ Architecture
 
 ```mermaid
 graph TB
-    subgraph Client["Capa de Cliente"]
-        WEB[Aplicación Web]
-        MOB[Aplicación Móvil]
-        SDK[SDK / Cliente API]
+    subgraph Client["Client Layer"]
+        WEB[Web App]
+        MOB[Mobile App]
+        SDK[SDK / API Client]
     end
 
-    subgraph Gateway["Gateway de API"]
-        NGX[Nginx proxy inverso\nTerminación SSL · Cabeceras de limitación de tasa]
+    subgraph Gateway["API Gateway"]
+        NGX[Nginx reverse proxy\nSSL termination · Rate limit headers]
     end
 
-    subgraph API["Aplicación FastAPI  —  /api/v1/"]
-        MW[Middleware de seguridad\nCabeceras · CORS · errores RFC 7807]
+    subgraph API["FastAPI Application  —  /api/v1/"]
+        MW[Security Middleware\nHeaders · CORS · RFC 7807 errors]
 
-        subgraph Modules["Módulos de Dominio"]
+        subgraph Modules["Domain Modules"]
             AUTH[auth\nJWT · OAuth2 · MFA]
-            USERS[users\nRegistro · Perfil]
-            SESS[sessions\nActivas · Revocar]
-            AUDIT[audit\nRegistros append-only]
-            ADMIN[admin\nAPI de administración]
+            USERS[users\nRegister · Profile]
+            SESS[sessions\nActive · Revoke]
+            AUDIT[audit\nAppend-only logs]
+            ADMIN[admin\nManagement API]
         end
 
         MW --> Modules
     end
 
-    subgraph Data["Capa de Datos"]
-        PG[(PostgreSQL 15\nUsuarios · Sesiones\nRegistros de auditoría)]
-        RD[(Redis 7\nLista negra de tokens\nLimitación de tasa\nCaché de sesiones)]
+    subgraph Data["Data Layer"]
+        PG[(PostgreSQL 15\nUsers · Sessions\nAudit logs)]
+        RD[(Redis 7\nToken blacklist\nRate limiting\nSession cache)]
     end
 
-    subgraph Security["Capa de Seguridad — aplicada en cada módulo"]
-        S1[bcrypt 12 rondas]
-        S2[Firma JWT RS256]
+    subgraph Security["Security Layer — applied at every module"]
+        S1[bcrypt 12 rounds]
+        S2[RS256 JWT signing]
         S3[TOTP / pyotp]
-        S4[Limitación de tasa ventana deslizante]
-        S5[Bloqueo por fuerza bruta]
+        S4[Sliding window rate limit]
+        S5[Brute force lockout]
     end
 
     Client --> NGX
     NGX --> MW
     Modules --> PG
     Modules --> RD
-    Security -.->|aplicado por| Modules
+    Security -.->|enforced by| Modules
 ```
 
 ---
 
-## 🔄 Flujo de Autenticación
+## 🔄 Authentication Flow
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor User
-    participant API as API FastAPI
+    participant API as FastAPI API
     participant DB as PostgreSQL
     participant Cache as Redis
 
     User->>API: POST /api/v1/auth/register
-    API->>DB: Guardar usuario (password bcrypt)
-    DB-->>API: Usuario creado
-    API-->>User: 201 Creado
+    API->>DB: Save user (bcrypt password)
+    DB-->>API: User created
+    API-->>User: 201 Created
 
     User->>API: POST /api/v1/auth/login
-    API->>Cache: Comprobar contador anti-fuerza bruta (IP + email)
-    API->>DB: Verificar credenciales
-    DB-->>API: Usuario encontrado
-    API->>API: Firmar JWT (RS256) + generar refresh token
-    API->>DB: Guardar sesión + hash de refresh token
+    API->>Cache: Check brute force counter (IP + email)
+    API->>DB: Verify credentials
+    DB-->>API: User found
+    API->>API: Sign JWT (RS256) + generate refresh token
+    API->>DB: Save session + refresh token hash
     API-->>User: access_token + refresh_token
 
     User->>API: GET /api/v1/users/me (Authorization: Bearer <token>)
-    API->>Cache: Comprobar lista negra de tokens
-    API->>API: Verificar firma JWT (clave pública)
-    API-->>User: 200 Perfil de usuario
+    API->>Cache: Check token blacklist
+    API->>API: Verify JWT signature (public key)
+    API-->>User: 200 User profile
 
     User->>API: POST /api/v1/auth/refresh
-    API->>DB: Validar refresh token
-    API->>Cache: Poner en lista negra el access token antiguo
-    API->>API: Emitir nuevo access_token + nuevo refresh_token
-    API-->>User: Nuevo par de tokens (rotación completada)
+    API->>DB: Validate refresh token
+    API->>Cache: Blacklist old access token
+    API->>API: Issue new access_token + new refresh_token
+    API-->>User: New token pair (rotation complete)
 
     User->>API: POST /api/v1/auth/logout
-    API->>Cache: Poner en lista negra el access token (TTL = tiempo de vida restante)
-    API->>DB: Invalidar refresh token
-    API-->>User: 200 Sesión cerrada
+    API->>Cache: Blacklist access token (TTL = remaining JWT lifetime)
+    API->>DB: Invalidate refresh token
+    API-->>User: 200 Logged out
 ```
 
 ---
 
-## 🚀 Inicio rápido
+## 🚀 Quickstart
 
-### Requisitos previos
+### Prerequisites
 
 - [Docker](https://docs.docker.com/get-docker/) + [Docker Compose](https://docs.docker.com/compose/)
-- [UV](https://docs.astral.sh/uv/getting-started/installation/) (gestor de paquetes de Python)
+- [UV](https://docs.astral.sh/uv/getting-started/installation/) (Python package manager)
 
-### 1. Clonar y configurar
+### 1. Clone and configure
 
 ```bash
 git clone https://github.com/yourusername/secureauth-platform.git
 cd secureauth-platform
 
-# Copiar plantilla de entorno
+# Copy environment template
 cp .env.example .env
 ```
 
-### 2. Generar claves RS256 para firmar JWT
+### 2. Generate RS256 keys for JWT signing
 
 ```bash
 uv run python scripts/generate_keys.py
 
-# Agrega las claves generadas a tu .env:
+# Add the generated keys to your .env:
 # JWT_PRIVATE_KEY=$(cat keys/private.pem)
 # JWT_PUBLIC_KEY=$(cat keys/public.pem)
 ```
 
-### 3. Iniciar todos los servicios
+### 3. Start all services
 
 ```bash
 make up
-# o: docker compose up --build -d
+# or: docker compose up --build -d
 ```
 
-### 4. Verificar que todo esté en funcionamiento
+### 4. Verify everything is running
 
 ```bash
-# Verificar el estado de los servicios
+# Check service health
 docker compose ps
 
-# Probar la API
+# Test the API
 curl http://localhost:8000/health
 # → {"status": "ok", "version": "0.1.0"}
 
-# Abrir documentación interactiva
+# Open interactive API docs
 open http://localhost:8000/docs
 ```
 
 ---
 
-## 📁 Estructura del proyecto
+## 📁 Project Structure
 
 ```
 secureauth-platform/
 ├── app/
-│   ├── main.py                  # Punto de entrada de la aplicación FastAPI
+│   ├── main.py                  # FastAPI app entry point
 │   ├── core/
-│   │   ├── config.py            # Configuración Pydantic (variables de entorno)
-│   │   └── exceptions.py        # Manejadores globales de errores RFC 7807
+│   │   ├── config.py            # Pydantic Settings (env vars)
+│   │   └── exceptions.py        # RFC 7807 global error handlers
 │   ├── api/
 │   │   └── v1/
-│   │       └── router.py        # Enrutador central de la API v1
+│   │       └── router.py        # Central API v1 router
 │   ├── modules/
 │   │   ├── auth/                # JWT, OAuth2, MFA, login, logout
-│   │   ├── users/               # Registro, perfil, contraseña
-│   │   ├── sessions/            # Sesiones activas, revocación
-│   │   ├── audit/               # Registros de auditoría inmutables
-│   │   └── admin/               # API de administración
+│   │   ├── users/               # Registration, profile, password
+│   │   ├── sessions/            # Active sessions, revocation
+│   │   ├── audit/               # Immutable audit logs
+│   │   └── admin/               # Admin management API
 │   └── shared/
-│       └── schemas.py           # Schemas compartidos de Pydantic
+│       └── schemas.py           # Shared Pydantic schemas
 ├── tests/
-│   ├── conftest.py              # Fixtures compartidos de pytest
-│   ├── unit/                    # Pruebas unitarias por módulo
-│   ├── integration/             # Pruebas end-to-end de la API
-│   └── security/                # Pruebas específicas de seguridad
-├── alembic/                     # Migraciones de base de datos
+│   ├── conftest.py              # Shared pytest fixtures
+│   ├── unit/                    # Unit tests per module
+│   ├── integration/             # End-to-end API tests
+│   └── security/                # Security-specific tests
+├── alembic/                     # Database migrations
 ├── scripts/
-│   └── generate_keys.py         # Generador de par de claves RS256
-├── Dockerfile                   # Imagen de producción multietapa
-├── docker-compose.yml           # Entorno de desarrollo
-├── docker-compose.test.yml      # Entorno de pruebas aislado
-├── pyproject.toml               # Configuración de UV / proyecto
-└── Makefile                     # Atajos para desarrollo
+│   └── generate_keys.py         # RS256 key pair generator
+├── Dockerfile                   # Multi-stage production image
+├── docker-compose.yml           # Development environment
+├── docker-compose.test.yml      # Isolated test environment
+├── pyproject.toml               # UV / project configuration
+└── Makefile                     # Developer shortcuts
 ```
 
 ---
 
-## 🛠️ Comandos para desarrolladores
+## 🛠️ Developer Commands
 
 ```bash
-make up              # Iniciar todos los servicios (dev)
-make down            # Detener todos los servicios
-make logs            # Seguir los logs de todos los contenedores
-make shell           # Abrir bash en el contenedor de la API
-make test            # Ejecutar suite completa de pruebas (contenedores aislados)
-make lint            # Revisar Black + Flake8 + isort + Bandit
-make format          # Formatear el código automáticamente
-make migrate         # Aplicar migraciones de Alembic
+make up              # Start all services (dev)
+make down            # Stop all services
+make logs            # Follow logs from all containers
+make shell           # Open bash in the API container
+make test            # Run full test suite (isolated containers)
+make lint            # Check Black + Flake8 + isort + Bandit
+make format          # Auto-format code
+make migrate         # Apply Alembic migrations
 make migrate-create name=add_users_table
-make keys            # Generar par de claves RS256
-make clean           # Eliminar contenedores, volúmenes, imágenes
+make keys            # Generate RS256 key pair
+make clean           # Remove containers, volumes, images
 ```
 
 ---
 
-## 🔐 Decisiones de diseño de seguridad
+## 🔐 Security Design Decisions
 
-| Decisión | Elección | Por qué |
+| Decision | Choice | Why |
 |---|---|---|
-| Hashing de contraseñas | bcrypt (12 rondas) | Estándar de la industria; 12 rondas equilibran seguridad y rendimiento |
-| Algoritmo JWT | RS256 (asimétrico) | Los servicios pueden verificar tokens solo con la clave pública — sin secreto compartido |
-| Almacenamiento de tokens | Lista negra en Redis | Revocación inmediata sin esperar expiración del JWT |
-| Refresh tokens | Rotación en cada uso | Un refresh token robado se detecta e invalida en el siguiente uso |
-| Limitación de tasa | Ventana deslizante (Redis) | Más preciso que ventana fija; previene ataques en los bordes |
-| MFA | TOTP (RFC 6238) | Compatible con cualquier app de autenticación; sin dependencia de proveedor |
-| Formato de error | RFC 7807 | Formato estándar legible por máquinas para consumidores de API |
+| Password hashing | bcrypt (12 rounds) | Industry standard; 12 rounds balances security and performance |
+| JWT algorithm | RS256 (asymmetric) | Services can verify tokens with the public key only — no shared secret |
+| Token storage | Redis blacklist | Immediate revocation without waiting for JWT expiry |
+| Refresh tokens | Rotation on every use | A stolen refresh token is detected and invalidated on next use |
+| Rate limiting | Sliding window (Redis) | More accurate than fixed window; prevents boundary attacks |
+| MFA | TOTP (RFC 6238) | Compatible with any authenticator app; no vendor lock-in |
+| Error format | RFC 7807 | Standard machine-readable error format for API consumers |
 
 ---
 
-## 🧪 Ejecución de pruebas
+## 🧪 Running Tests
 
 ```bash
-# Suite completa de pruebas en entorno Docker aislado
+# Full test suite in isolated Docker environment
 make test
 
-# Local (requiere db y redis en ejecución)
+# Local (requires running db and redis)
 uv run pytest tests/ -v --cov=app --cov-report=html
 
-# Solo pruebas de seguridad
+# Security tests only
 uv run pytest tests/security/ -v
 
-# Con informe de cobertura
+# With coverage report
 open htmlcov/index.html
 ```
 
 ---
 
-## 📡 Descripción general de la API
+## 📡 API Overview
 
-Todos los endpoints están bajo `/api/v1/`. Documentación interactiva completa disponible en `/docs`.
+All endpoints are under `/api/v1/`. Full interactive documentation available at `/docs`.
 
-| Método | Endpoint | Descripción |
+| Method | Endpoint | Description |
 |---|---|---|
-| `POST` | `/auth/register` | Crear una nueva cuenta de usuario |
-| `POST` | `/auth/login` | Autenticar y recibir par de tokens |
-| `POST` | `/auth/refresh` | Rotar refresh token |
-| `POST` | `/auth/logout` | Invalidar tokens y cerrar sesión |
-| `POST` | `/auth/mfa/enable` | Activar autenticación multifactor TOTP |
-| `POST` | `/auth/mfa/verify` | Verificar código TOTP |
-| `GET` | `/auth/oauth/google` | Iniciar flujo OAuth2 de Google |
-| `GET` | `/auth/oauth/github` | Iniciar flujo OAuth2 de GitHub |
-| `GET` | `/users/me` | Obtener perfil del usuario actual |
-| `PATCH` | `/users/me` | Actualizar perfil del usuario actual |
-| `GET` | `/sessions` | Listar sesiones activas |
-| `DELETE` | `/sessions/{id}` | Revocar una sesión específica |
-| `GET` | `/audit/logs` | Consultar registro de auditoría (paginado) |
-| `GET` | `/admin/users` | Listar todos los usuarios (solo admin) |
+| `POST` | `/auth/register` | Create a new user account |
+| `POST` | `/auth/login` | Authenticate and receive token pair |
+| `POST` | `/auth/refresh` | Rotate refresh token |
+| `POST` | `/auth/logout` | Invalidate tokens and end session |
+| `POST` | `/auth/mfa/enable` | Enable TOTP multi-factor authentication |
+| `POST` | `/auth/mfa/verify` | Verify TOTP code |
+| `GET` | `/auth/oauth/google` | Initiate Google OAuth2 flow |
+| `GET` | `/auth/oauth/github` | Initiate GitHub OAuth2 flow |
+| `GET` | `/users/me` | Get current user profile |
+| `PATCH` | `/users/me` | Update current user profile |
+| `GET` | `/sessions` | List active sessions |
+| `DELETE` | `/sessions/{id}` | Revoke a specific session |
+| `GET` | `/audit/logs` | Query audit log (paginated) |
+| `GET` | `/admin/users` | List all users (admin only) |
 
 ---
 
-## 🤝 Contribuir
+## 🤝 Contributing
 
-1. Haz fork del repositorio
-2. Crea una rama de función: `git checkout -b feat/your-feature`
-3. Instala dependencias: `uv sync --group dev`
-4. Instala hooks de pre-commit: `uv run pre-commit install`
-5. Realiza tus cambios y ejecuta: `make lint && make test`
-6. Haz commit usando conventional commits: `feat(scope): description`
-7. Abre un Pull Request
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feat/your-feature`
+3. Install dependencies: `uv sync --group dev`
+4. Install pre-commit hooks: `uv run pre-commit install`
+5. Make your changes and run: `make lint && make test`
+6. Commit using conventional commits: `feat(scope): description`
+7. Open a Pull Request
 
 ---
 
-## 📄 Licencia
+## 📄 License
 
-MIT — ver [LICENSE](./LICENSE) para más detalles.
+MIT — see [LICENSE](./LICENSE) for details.
 
 ---
 
 <div align="center">
-Construido con FastAPI · PostgreSQL · Redis · UV
+Built using FastAPI · PostgreSQL · Redis · UV
 </div>
