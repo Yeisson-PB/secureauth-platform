@@ -15,7 +15,7 @@ def test_app_title() -> None:
     """Verify the app has the correct title."""
     from app.main import app
 
-    assert app.title == "SecureAuth Platform"
+    assert app.title == "SecureAuth API"
 
 
 def test_settings_load() -> None:
@@ -23,7 +23,7 @@ def test_settings_load() -> None:
     from app.core.config import settings
 
     assert settings is not None
-    assert settings.app_env == "test"
+    assert settings.APP_ENV == "test"
 
 
 def test_health_endpoint(client) -> None:  # type: ignore[no-untyped-def]
