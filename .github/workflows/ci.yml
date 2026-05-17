@@ -11,15 +11,12 @@ on:
   pull_request:
     branches: [main, develop]
 
-# Cancel in-progress runs for the same branch when a new push arrives.
-# Saves CI minutes — no point finishing a run that's already outdated.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
   PYTHON_VERSION: "3.11"
-  # These are safe non-secret defaults used only in CI test environment
   DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/secureauth_test
   REDIS_URL: redis://localhost:6379/0
   SECRET_KEY: ci-test-secret-key-not-for-production
@@ -27,8 +24,6 @@ env:
 
 jobs:
   # ── Job 1: Lint ─────────────────────────────────────────────────────────────
-  # Checks code formatting and style before anything else runs.
-  # Fast fail: if code is badly formatted, skip security and tests.
   lint:
     name: Lint & Format Check
     runs-on: ubuntu-latest
@@ -37,15 +32,15 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install UV
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@v5
         with:
-          version: "0.4.20"
+          version: "latest"
 
       - name: Set up Python
         run: uv python install ${{ env.PYTHON_VERSION }}
 
       - name: Install dependencies
-        run: uv sync --group dev
+        run: uv sync --dev
 
       - name: Check formatting with Black
         run: uv run black --check app/ tests/
@@ -57,13 +52,9 @@ jobs:
         run: uv run flake8 app/ tests/
 
   # ── Job 2: Security SAST ────────────────────────────────────────────────────
-  # Static Application Security Testing.
-  # Runs in parallel with lint — independent of lint result.
-  # Results uploaded to GitHub Security tab as SARIF.
   security:
     name: Security Scan (SAST)
     runs-on: ubuntu-latest
-    # Required permissions to upload SARIF results to GitHub Security tab
     permissions:
       security-events: write
       actions: read
@@ -73,41 +64,34 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install UV
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@v5
         with:
-          version: "0.4.20"
+          version: "latest"
 
       - name: Set up Python
         run: uv python install ${{ env.PYTHON_VERSION }}
 
       - name: Install dependencies
-        run: uv sync --group dev
+        run: uv sync --dev
 
       - name: Run Bandit (Python security linter)
-        # Bandit scans for common security issues:
-        # hardcoded passwords, use of eval(), weak crypto, SQL injection patterns, etc.
-        # -f sarif: outputs in SARIF format for GitHub Security tab
-        # -o: save to file so we can upload it even if bandit exits with errors
         run: |
           uv run bandit -c pyproject.toml -r app/ \
             -f sarif \
             -o bandit-results.sarif \
             --exit-zero
-        # --exit-zero: don't fail the step; let the SARIF upload handle reporting.
-        # In a stricter setup, remove this and the job will fail on any finding.
 
       - name: Upload Bandit results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()  # Upload even if bandit found issues
+        uses: github/codeql-action/upload-sarif@v4
+        # Only upload if Code Scanning is enabled on the repo (Settings → Security)
+        # If it's not enabled, this step is skipped silently instead of failing
+        if: always() && github.event_name != 'pull_request'
+        continue-on-error: true
         with:
           sarif_file: bandit-results.sarif
           category: bandit
 
       - name: Run Semgrep (OWASP Top 10 rules)
-        # Semgrep uses community rule sets to find complex vulnerabilities
-        # that simple pattern matching (Bandit) might miss.
-        # p/python: Python-specific rules
-        # p/owasp-top-ten: OWASP Top 10 vulnerability patterns
         uses: semgrep/semgrep-action@v1
         with:
           config: >-
@@ -116,19 +100,13 @@ jobs:
             p/secrets
         env:
           SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
-        # Note: SEMGREP_APP_TOKEN is optional.
-        # Without it, Semgrep runs in CI mode without reporting to semgrep.dev
 
   # ── Job 3: Tests ─────────────────────────────────────────────────────────────
-  # Runs the full test suite with PostgreSQL and Redis as service containers.
-  # Depends on lint passing — no point testing badly formatted code.
   test:
     name: Test Suite
     runs-on: ubuntu-latest
-    needs: lint  # Only run tests if linting passes
+    needs: lint
 
-    # Service containers: GitHub Actions spins these up before the job starts.
-    # They're accessible at localhost with the specified ports.
     services:
       postgres:
         image: postgres:15-alpine
@@ -159,16 +137,14 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install UV
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@v5
         with:
-          version: "0.4.20"
+          version: "latest"
 
       - name: Set up Python
         run: uv python install ${{ env.PYTHON_VERSION }}
 
       - name: Cache UV dependencies
-        # Cache the UV package store between runs.
-        # Key includes pyproject.toml hash — cache invalidates when deps change.
         uses: actions/cache@v4
         with:
           path: ~/.cache/uv
@@ -176,8 +152,8 @@ jobs:
           restore-keys: |
             uv-${{ runner.os }}-
 
-      - name: Install dependencies (including dev)
-        run: uv sync --group dev
+      - name: Install dependencies
+        run: uv sync --dev
 
       - name: Run Pytest with coverage
         run: |
@@ -193,33 +169,29 @@ jobs:
         if: always()
         with:
           file: coverage.xml
-          fail_ci_if_error: false  # Don't fail CI if Codecov upload fails
+          fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
 
   # ── Job 4: Docker Build ──────────────────────────────────────────────────────
-  # Verifies the production Docker image builds without errors.
-  # Runs after tests pass — confirms the image is always in a buildable state.
   build:
     name: Docker Build Check
     runs-on: ubuntu-latest
-    needs: [lint, test]  # Only build if lint and tests pass
+    needs: [lint, test]
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
-        # Buildx enables advanced build features: multi-platform, cache export, etc.
         uses: docker/setup-buildx-action@v3
 
       - name: Build Docker image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           dockerfile: Dockerfile
           target: runtime
-          push: false  # Only build, don't push to registry
-          # Cache layers between CI runs — dramatically speeds up Docker builds
+          push: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
           tags: secureauth-platform:ci-${{ github.sha }}
