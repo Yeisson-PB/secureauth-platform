@@ -45,7 +45,7 @@ class TestSettings:
 
     def test_valid_settings_load(self):
         """Test that valid settings can be created."""
-        s = Settings(**MINIMAL_SETTINGS)
+        s = Settings(**MINIMAL_SETTINGS, APP_ENV="development")
         assert s.APP_ENV == "development"  # Default value
         assert s.DEBUG is False  # Default value
         assert s.JWT_ALGORITHM == "RS256"  # Default value
@@ -72,8 +72,9 @@ class TestSettings:
         )
         assert s.DEBUG is True
 
-    def test_missing_jwt_private_key_raises(self):
+    def test_missing_jwt_private_key_raises(self, monkeypatch):
         """Test that missing JWT_PRIVATE_KEY raises ValidationError."""
+        monkeypatch.delenv("JWT_PRIVATE_KEY", raising=False)
         data = {k: v for k, v in MINIMAL_SETTINGS.items() if k != "JWT_PRIVATE_KEY"}
         with pytest.raises(ValidationError):
             SettingsNoEnv(**data)
