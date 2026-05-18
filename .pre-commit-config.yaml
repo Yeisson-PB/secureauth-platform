@@ -7,6 +7,11 @@ repos:
       - id: check-yaml
       - id: check-added-large-files
       - id: detect-private-key          # Catches leaked secrets
+        exclude: |
+          (?x)^(
+            \.env\.example|
+            tests/test_config\.py
+          )$
       - id: check-merge-conflict
 
   - repo: https://github.com/psf/black
@@ -23,6 +28,7 @@ repos:
     rev: 7.0.0
     hooks:
       - id: flake8
+        args: ["--max-line-length=88", "--extend-ignore=E203,W503"]
 
   - repo: https://github.com/PyCQA/bandit
     rev: 1.7.9

@@ -75,6 +75,8 @@ services:
     restart: unless-stopped
     # En desarrollo: anular CMD para habilitar recarga en caliente
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    env_file:
+      - .env
     environment:
       APP_ENV: development
       DEBUG: "true"
