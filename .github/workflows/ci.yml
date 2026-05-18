@@ -156,6 +156,18 @@ jobs:
       - name: Install dependencies
         run: uv sync --dev
 
+      - name: Generate test RSA keys
+        run: |
+          mkdir -p certs
+          openssl genrsa -out certs/private_key.pem 2048
+          openssl rsa -in certs/private_key.pem -pubout -out certs/public_key.pem
+          echo "JWT_PRIVATE_KEY<<EOF" >> $GITHUB_ENV
+          cat certs/private_key.pem >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+          echo "JWT_PUBLIC_KEY<<EOF" >> $GITHUB_ENV
+          cat certs/public_key.pem >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
       - name: Run Pytest with coverage
         run: |
           uv run pytest tests/ \
