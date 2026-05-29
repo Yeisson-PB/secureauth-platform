@@ -41,6 +41,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copiar código fuente
 COPY app/ ./app/
+COPY alembic/ ./alembic/
+COPY alembic.ini ./alembic.ini
 
 RUN chown -R appuser:appgroup /app
 

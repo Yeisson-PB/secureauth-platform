@@ -78,11 +78,11 @@ format:
 # ── Database ──────────────────────────────────────────────────────────────────
 
 migrate:
-	docker compose exec api uv run alembic upgrade head
+	docker compose exec api python -m alembic upgrade head
 
 # Usage: make migrate-create name=add_users_table
 migrate-create:
-	docker compose exec api uv run alembic revision --autogenerate -m "$(name)"
+	docker compose exec api python -m alembic revision --autogenerate -m "$(name)"
 
 # ── Setup ─────────────────────────────────────────────────────────────────────
 

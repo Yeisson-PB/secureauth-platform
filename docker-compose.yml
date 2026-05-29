@@ -88,6 +88,8 @@ services:
       # Montar el código fuente para la recarga en caliente durante el desarrollo.
       # El contenedor detecta tus cambios locales al instante sin necesidad de reconstruirlo.
       - ./app:/app/app:ro
+      - ./alembic:/app/alembic:ro
+      - ./alembic.ini:/app/alembic.ini:ro
     ports:
       - "8000:8000"
     networks:
