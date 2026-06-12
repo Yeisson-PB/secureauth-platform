@@ -1,4 +1,4 @@
-# Use test database URL
+# Use test database URL: construct safely to avoid double _test suffix
 from urllib.parse import urlsplit, urlunsplit
 
 import pytest
