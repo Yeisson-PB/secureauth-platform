@@ -1,3 +1,6 @@
+# Use test database URL
+from urllib.parse import urlsplit, urlunsplit
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -8,9 +11,21 @@ from app.core.database import get_db
 from app.main import app
 from app.shared.base_model import Base
 
-# Use test database URL
-TEST_DATABASE_URL = str(settings.DATABASE_URL).replace(
-    "/secureauth", "/secureauth_test"
+parsed_database_url = urlsplit(str(settings.DATABASE_URL))
+current_db_name = parsed_database_url.path.lstrip("/")
+if current_db_name.endswith("_test"):
+    test_db_name = current_db_name
+else:
+    test_db_name = f"{current_db_name}_test"
+
+TEST_DATABASE_URL = urlunsplit(
+    (
+        parsed_database_url.scheme,
+        parsed_database_url.netloc,
+        f"/{test_db_name}",
+        parsed_database_url.query,
+        parsed_database_url.fragment,
+    )
 )
 
 # Create a separate async engine for tests
