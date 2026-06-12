@@ -8,10 +8,8 @@ from app.core.database import get_db
 from app.main import app
 from app.shared.base_model import Base
 
-# Use test database URL
-TEST_DATABASE_URL = str(settings.DATABASE_URL).replace(
-    "/secureauth", "/secureauth_test"
-)
+# Use test database URL - simply append _test to avoid double naming
+TEST_DATABASE_URL = str(settings.DATABASE_URL) + "_test"
 
 # Create a separate async engine for tests
 test_engine = create_async_engine(TEST_DATABASE_URL, echo=False, poolclass=NullPool)
