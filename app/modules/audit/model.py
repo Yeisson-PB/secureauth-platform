@@ -43,8 +43,8 @@ class AuditLog(Base, UUIDMixin):
         String(20), nullable=True, default="success"
     )  # e.g., "success", "failure"
     context: Mapped[dict | None] = mapped_column(
-        JSONB, nullable=True
-    )  # Additional structured data
+        "metadata", JSONB, nullable=True
+    )  # Additional structured data (DB column name remains metadata)
 
     # Table configuration
     __table_args__ = (

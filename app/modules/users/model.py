@@ -1,9 +1,14 @@
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.shared.base_model import Base, TimestampMixin, UUIDMixin
+
+if TYPE_CHECKING:
+    from app.modules.audit.model import AuditLog  # noqa: F401
+    from app.modules.sessions.model import Session  # noqa: F401
 
 
 class User(Base, TimestampMixin, UUIDMixin):
@@ -12,10 +17,10 @@ class User(Base, TimestampMixin, UUIDMixin):
     email: Mapped[str] = mapped_column(
         String(255), unique=True, nullable=False, index=True
     )
-    full_name: Mapped[str | None] = mapped_column(String(255), nullable=False)
+    full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Authentication
-    hashed_password: Mapped[str | None] = mapped_column(String(255), nullable=False)
+    hashed_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Account status
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
@@ -55,7 +60,7 @@ class User(Base, TimestampMixin, UUIDMixin):
     audit_logs: Mapped[list["AuditLog"]] = relationship(  # noqa: F821
         "AuditLog", back_populates="user", lazy="select"
     )
-    mfa_reovery_codes: Mapped[list["MFARecoveryCode"]] = relationship(  # noqa: F821
+    mfa_recovery_codes: Mapped[list["MFARecoveryCode"]] = relationship(  # noqa: F821
         "MFARecoveryCode",
         back_populates="user",
         cascade="all, delete-orphan",

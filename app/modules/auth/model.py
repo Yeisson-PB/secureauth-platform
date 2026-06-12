@@ -11,8 +11,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.shared.base_model import Base, TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
-    from app.modules.session.model import Session  # noqa: F401
-    from app.modules.user.model import User  # noqa: F401
+    from app.modules.sessions.model import Session  # noqa: F401
+    from app.modules.users.model import User  # noqa: F401
 
 
 class RefreshToken(Base, TimestampMixin, UUIDMixin):

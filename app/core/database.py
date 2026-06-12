@@ -39,9 +39,9 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 async def create_tables() -> None:
     """Create database tables based on the defined models."""
-    import app.modules.audit.model
-    import app.modules.auth.model
-    import app.modules.sessions.model
+    import app.modules.audit.model  # noqa: F401
+    import app.modules.auth.model  # noqa: F401
+    import app.modules.sessions.model  # noqa: F401
     import app.modules.users.model  # noqa: F401
     from app.shared.base_model import Base
 

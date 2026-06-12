@@ -1,13 +1,19 @@
 """Plataforma SecureAuth: punto de entrada principal de la aplicación."""
 
+# CRITICAL: Import all models early to register them with SQLAlchemy
+# before any relationships are resolved
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+# Import models early to register them with SQLAlchemy without binding the
+# package name `app` in this module's namespace (avoids redefinition of
+# `app` below).
+import app.modules  # noqa: F401
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.exceptions import configure_exception_handlers
 
-app = FastAPI(
+app = FastAPI(  # noqa: F811
     title="SecureAuth API",
     description="API para la plataforma de autenticación segura.",
     version="0.1.0",
