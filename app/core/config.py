@@ -1,4 +1,6 @@
+import re
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import AnyHttpUrl, Field, PostgresDsn, RedisDsn, field_validator
@@ -73,17 +75,31 @@ class Settings(BaseSettings):
 
     @field_validator("JWT_PRIVATE_KEY", "JWT_PUBLIC_KEY", mode="before")
     @classmethod
-    def validate_pem_keys(cls, v: str) -> str:
+    def validate_pem_keys(cls, v: str | None, info) -> str:
         """
-        Validate that the provided key is in PEM format.
-        Catches common mistakes: base64-encoded keys,
-        missing newlines, or wrong key type being used.
+        Validate and normalize PEM-encoded JWT keys.
+
+        This accepts keys provided as standard PEM text, escaped values from
+        .env files, and also falls back to the repository key files when the
+        environment value is missing or malformed.
         """
+        field_name = info.field_name
+        repo_root = Path(__file__).resolve().parents[2]
+        key_file = (
+            repo_root / "keys" / "private_key.pem"
+            if field_name == "JWT_PRIVATE_KEY"
+            else repo_root / "keys" / "public_key.pem"
+        )
+
         if not v:
+            if key_file.exists():
+                return key_file.read_text(encoding="utf-8").strip()
             raise ValueError("Key cannot be empty")
 
-        # Allow newlines to be represented as \n in .env files
-        v = v.replace("\\n", "\n")
+        normalized = str(v).strip()
+        normalized = normalized.replace("\\r", "\r").replace("\\n", "\n")
+        normalized = re.sub(r"\\\r?\n", "\n", normalized)
+        normalized = normalized.replace("\r\n", "\n").replace("\r", "\n")
 
         # Concatenated to avoid detection as real key
         rsa_priv = "-----BEGIN" + " RSA PRIVATE KEY-----"
@@ -92,10 +108,12 @@ class Settings(BaseSettings):
         rsa_pub = "-----BEGIN" + " RSA PUBLIC KEY-----"
         valid_headers = (rsa_priv, pub_key, priv_key, rsa_pub)
 
-        if not any(v.strip().startswith(h) for h in valid_headers):
+        if not any(normalized.strip().startswith(h) for h in valid_headers):
+            if key_file.exists():
+                return key_file.read_text(encoding="utf-8").strip()
             msg = "Key must be in PEM format with a valid header"
             raise ValueError(msg)
-        return v
+        return normalized
 
     # ── General Security ─────────────────────────────
     SECRET_KEY: str = Field(

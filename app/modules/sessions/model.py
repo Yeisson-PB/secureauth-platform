@@ -36,9 +36,15 @@ class Session(Base, TimestampMixin, UUIDMixin):
     )
 
     # Timestamps for session lifecycle management
-    last_active_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_active_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="sessions")  # noqa: F821

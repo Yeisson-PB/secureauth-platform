@@ -90,6 +90,10 @@ class UserRepository:
         await self.db.commit()
         return user.failed_login_attempts
 
+    async def increment_failed_attempts(self, user_id: uuid.UUID) -> int:
+        """Backward-compatible alias used by the auth service."""
+        return await self.increment_failed_login_attempts(user_id)
+
     async def reset_failed_attempts(self, user_id: uuid.UUID) -> None:
         """Reset failed login attempts for a user."""
         await self.db.execute(
