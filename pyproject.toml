@@ -23,7 +23,7 @@ dependencies = [
     "cryptography>=48.0.0",
     # Validation & Config
     "pydantic>=2.13.4",
-    "pydantic-settings>=2.14.1",
+    "pydantic-settings>=2.14.2",
     "python-dotenv>=1.2.2",
     # HTTP client (for OAuth2)
     "httpx>=0.28.1",
