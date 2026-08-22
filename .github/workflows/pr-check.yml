@@ -9,6 +9,12 @@ on:
   pull_request:
     types: [opened, edited, synchronize, reopened]
 
+# Default minimal permissions for the GITHUB_TOKEN in every job.
+# Jobs that need more (e.g. `secret-scan` to comment on PRs) override
+# this explicitly at the job level below.
+permissions:
+  contents: read
+
 jobs:
   # ── Conventional Commits title check ─────────────────────────────────────────
   # Enforces that PR titles follow Conventional Commits format.
@@ -16,6 +22,9 @@ jobs:
   conventional-title:
     name: Conventional Commit Title
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - name: Check PR title format
         uses: amannn/action-semantic-pull-request@v5
@@ -46,6 +55,9 @@ jobs:
   secret-scan:
     name: Secret Leak Detection
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
