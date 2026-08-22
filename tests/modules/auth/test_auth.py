@@ -66,7 +66,7 @@ class TestLogin:
 
     async def test_login_returns_valid_jwt(self, client: AsyncClient):
         """Access token is a valid JWT with correct claims."""
-        from jose import jwt
+        import jwt
 
         from app.core.config import settings
 

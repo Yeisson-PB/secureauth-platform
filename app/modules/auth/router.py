@@ -107,9 +107,9 @@ async def logout(
     access_token = auth_header.replace("Bearer ", "").strip()
 
     # Decode to get the jti (don't re-verify — already done by get_current_user)
-    from jose import jwt as jose_jwt
+    import jwt as pyjwt
 
-    payload = jose_jwt.decode(
+    payload = pyjwt.decode(
         access_token,
         settings.JWT_PUBLIC_KEY,
         algorithms=[settings.JWT_ALGORITHM],

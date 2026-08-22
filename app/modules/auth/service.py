@@ -2,7 +2,8 @@ import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from jose import JWTError, jwt
+import jwt
+from jwt import PyJWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -65,7 +66,7 @@ class AuthService:
         """
         Decode and verify a JWT access token.
 
-        Verification checks (all done automatically by python-jose):
+        Verification checks (all done automatically by PyJWT):
         1. Signature valid (using RS256 public key)
         2. Token not expired (exp claim)
         3. Algorithm matches (prevents algorithm confusion attacks)
@@ -79,7 +80,7 @@ class AuthService:
                 settings.JWT_PUBLIC_KEY,
                 algorithms=[settings.JWT_ALGORITHM],
             )
-        except JWTError as e:
+        except PyJWTError as e:
             raise AppError(
                 status_code=401,
                 error_code="invalid_token",
