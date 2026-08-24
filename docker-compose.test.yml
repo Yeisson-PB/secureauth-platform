@@ -50,11 +50,18 @@ services:
     container_name: secureauth_api_test
     # Sobrescribir el punto de entrada para ejecutar pytest en lugar de uvicorn
     command: >
-      uv run pytest tests/
+      sh -c "
+      mkdir -p keys &&
+      openssl genrsa -out keys/private_key.pem 2048 &&
+      openssl rsa -in keys/private_key.pem -pubout -out keys/public_key.pem &&
+      export JWT_PRIVATE_KEY=\"$(cat keys/private_key.pem)\" &&
+      export JWT_PUBLIC_KEY=\"$(cat keys/public_key.pem)\" &&
+      uv run --group dev pytest tests/
       --cov=app
       --cov-report=term-missing
       --cov-report=xml:/app/coverage.xml
       -v
+      "
     environment:
       APP_ENV: test
       DATABASE_URL: postgresql+asyncpg://test:test@db_test:5432/secureauth_test

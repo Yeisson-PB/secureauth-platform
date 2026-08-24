@@ -10,15 +10,22 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 # Install UV
-COPY --from=ghcr.io/astral-sh/uv:0.4.20 /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.12.5 /uv /usr/local/bin/uv
 
 # Copy dependency files
 COPY pyproject.toml .
 COPY uv.lock* .
+COPY README.md .
 
 # Export dependencies as requirements.txt (sin hashes para simplicidad)
 # Esto convierte uv.lock → requirements.txt estándar que pip puede usar
 RUN uv export --frozen --no-dev --no-hashes --no-emit-project -o requirements.txt
+
+# Copy tests files
+COPY app/ ./app/
+COPY tests/ ./tests/
+COPY alembic/ ./alembic/
+COPY alembic.ini ./alembic.ini
 
 # ─────────────────────────────────────────────
 # Stage 2: runtime

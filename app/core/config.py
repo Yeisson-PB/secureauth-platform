@@ -109,8 +109,6 @@ class Settings(BaseSettings):
         valid_headers = (rsa_priv, pub_key, priv_key, rsa_pub)
 
         if not any(normalized.strip().startswith(h) for h in valid_headers):
-            if key_file.exists():
-                return key_file.read_text(encoding="utf-8").strip()
             msg = "Key must be in PEM format with a valid header"
             raise ValueError(msg)
         return normalized

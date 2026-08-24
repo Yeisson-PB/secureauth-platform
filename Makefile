@@ -56,6 +56,7 @@ redis-shell:
 # ── Testing ───────────────────────────────────────────────────────────────────
 
 test:
+	@touch coverage.xml
 	docker compose -f docker-compose.test.yml up --build --abort-on-container-exit
 	docker compose -f docker-compose.test.yml down -v
 

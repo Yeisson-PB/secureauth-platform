@@ -74,3 +74,6 @@ addopts = "--cov=app --cov-report=term-missing --cov-fail-under=80"
 [tool.bandit]
 exclude_dirs = ["tests", ".venv"]
 skips = ["B101"]  # Allow assert in tests
+
+[tool.uv]
+default-groups = ["dev"]
