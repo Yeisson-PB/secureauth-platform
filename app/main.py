@@ -1,5 +1,7 @@
 """Plataforma SecureAuth: punto de entrada principal de la aplicación."""
 
+from contextlib import asynccontextmanager
+
 # CRITICAL: Import all models early to register them with SQLAlchemy
 # before any relationships are resolved
 from fastapi import FastAPI
@@ -12,6 +14,22 @@ import app.modules  # noqa: F401
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.exceptions import configure_exception_handlers
+from app.core.redis_client import close_redis_pool
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Application lifespan handler.
+
+    On shutdown, closes the shared Redis connection pool cleanly instead
+    of leaking connections. The pool itself is created lazily on first
+    use (see app.core.redis_client.get_redis_pool), so there is nothing
+    to do on startup.
+    """
+    yield
+    await close_redis_pool()
+
 
 app = FastAPI(  # noqa: F811
     title="SecureAuth API",
@@ -20,6 +38,7 @@ app = FastAPI(  # noqa: F811
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",
+    lifespan=lifespan,
 )
 
 # CORS Middleware para permitir solicitudes desde el frontend

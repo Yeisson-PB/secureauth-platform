@@ -1,13 +1,13 @@
 import logging
+import uuid
 
-import redis.asyncio as aioredis
 from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.core.database import get_db
 from app.core.exceptions import AppError
+from app.core.redis_client import is_token_blacklisted
 from app.modules.auth.service import AuthService
 from app.modules.users.model import User
 from app.modules.users.repository import UserRepository
@@ -64,36 +64,18 @@ async def get_current_user(
         )
 
     # --- Step 3: Check Redis blacklist ------------
-    # This is what makes logout instant — even though the JWT hasn't expired,
-    # if its jti is in the blacklist, we reject it.
-    try:
-        r = aioredis.from_url(settings.redis_url_str)
-        is_blacklisted = await r.exists(f"blacklist:{jti}")
-        await r.aclose()
-
-        if is_blacklisted:
-            raise AppError(
-                status_code=401,
-                error_code="token_revoked",
-                title="Token Revoked",
-                detail="This token has been revoked. Please log in again.",
-            )
-    except AppError:
-        raise
-    except Exception as exc:
-        # If Redis is down, we can't check the blacklist.
-        # Depending on your security posture, you might want to FAIL CLOSED
-        # (reject all requests when Redis is down) or FAIL OPEN
-        # (allow requests but log the Redis failure).
-        # We FAIL OPEN here for availability — change to raise in high-security envs.
-        logger.warning(
-            "Redis blacklist check failed; allowing request.",
-            exc_info=exc,
+    # Delegates to the shared app.core.redis_client module (single
+    # connection pool, fail-open behavior documented there) instead of
+    # opening an ad-hoc Redis connection here.
+    if await is_token_blacklisted(jti):
+        raise AppError(
+            status_code=401,
+            error_code="token_revoked",
+            title="Token Revoked",
+            detail="This token has been revoked. Please log in again.",
         )
 
     # --- Step 4: Load user from DB ----------------
-    import uuid
-
     user_repo = UserRepository(db)
     user = await user_repo.get_by_id(uuid.UUID(user_id))
 

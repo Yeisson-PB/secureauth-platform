@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.exceptions import AppError
+from app.core.redis_client import blacklist_token
 from app.core.security import generate_secure_token, hash_token
 from app.modules.auth.repository import AuthRepository
 from app.modules.auth.schemas import TokenResponse
@@ -281,7 +282,7 @@ class AuthService:
         TTL = remaining access token lifetime (no need to keep longer).
         """
         # Step 1: Blacklist the access token in Redis
-        await self._blacklist_access_token(access_token_jti)
+        await blacklist_token(access_token_jti)
 
         # Step 2: Revoke refresh token if provided
         if refresh_token:
@@ -370,30 +371,6 @@ class AuthService:
             expires_in=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         )
 
-    async def _blacklist_token(self, jti: str) -> None:
-        """
-        Add a JWT's jti to the Redis blacklist.
-
-        TTL = access token lifetime (no need to keep it longer —
-        after expiry the token would be invalid anyway).
-        """
-        try:
-            import redis.asyncio as aioredis
-
-            r = aioredis.from_url(settings.redis_url_str)
-            key = f"blacklist:{jti}"
-            await r.setex(
-                key,
-                settings.REDIS_BLACKLIST_TTL_SECONDS,
-                "1",
-            )
-            await r.aclose()
-        except Exception as exc:
-            logger.warning(
-                "Failed to blacklist JWT jti in Redis; allowing token to continue.",
-                exc_info=exc,
-            )
-
     async def _log_failed_login(
         self,
         email: str,
@@ -411,7 +388,7 @@ class AuthService:
             description=f"Failed login attempt: {reason}",
             ip_address=ip_address,
             status="failure",
-            metadata={"reason": reason},
+            context={"reason": reason},
         )
         self.db.add(log)
         await self.db.commit()
@@ -432,8 +409,9 @@ class AuthService:
             user_id=user_id,
             action=action,
             description=description,
+            ip_address=ip_address,
             status=status,
-            metadata=metadata,
+            context=metadata,
         )
         self.db.add(log)
         await self.db.commit()
