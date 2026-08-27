@@ -10,6 +10,7 @@ from app.core.config import settings
 from app.core.exceptions import AppError
 from app.core.redis_client import blacklist_token
 from app.core.security import generate_secure_token, hash_token
+from app.core.user_agent import parse_user_agent
 from app.modules.auth.repository import AuthRepository
 from app.modules.auth.schemas import TokenResponse
 from app.modules.users.model import User
@@ -30,7 +31,9 @@ class AuthService:
     # --- JWT ------------------------------
 
     @staticmethod
-    def create_access_token(user_id: uuid.UUID) -> tuple[str, str]:
+    def create_access_token(
+        user_id: uuid.UUID, session_id: uuid.UUID
+    ) -> tuple[str, str]:
         """
         Create a signed RS256 JWT access token.
 
@@ -57,6 +60,8 @@ class AuthService:
             "jti": jti,  # JWT ID: used for blacklisting
             "type": "access",  # Prevents refresh tokens being used as access tokens
         }
+        if session_id is not None:
+            payload["sid"] = str(session_id)
         token = jwt.encode(
             payload, settings.JWT_PRIVATE_KEY, algorithm=settings.JWT_ALGORITHM
         )
@@ -324,18 +329,28 @@ class AuthService:
         """
         Generate access + refresh tokens and persist the refresh token.
         Called by login() and refresh_tokens().
+
+        A brand-new session (login, or a refresh whose stored token had
+        no session_id for some legacy reason) is created with device
+        info parsed from the User-Agent header (Task 10) so that
+        GET /sessions has something meaningful to display.
         """
         # Create or reuse session
         if session_id is None:
+            device_info = parse_user_agent(user_agent)
             session = await self.auth_repo.create_session(
                 user_id=user.id,
                 ip_address=ip_address,
                 user_agent=user_agent,
+                device_name=device_info["device_name"],
+                device_type=device_info["device_type"],
+                browser=device_info["browser"],
+                os=device_info["os"],
             )
             session_id = session.id
 
-        # Generate access token (JWT)
-        access_token, jti = self.create_access_token(user.id)
+        # Generate access token (JWT), tagged with the session it belongs to
+        access_token, jti = self.create_access_token(user.id, session_id=session_id)
 
         # Generate refresh token (random opaque token)
         raw_refresh_token = generate_secure_token(32)

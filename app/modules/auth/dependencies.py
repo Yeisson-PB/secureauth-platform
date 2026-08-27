@@ -114,3 +114,33 @@ async def get_current_superuser(current_user: User = Depends(get_current_user)) 
             detail="This endpoint requires administrator privileges.",
         )
     return current_user
+
+
+async def get_current_session_id(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+) -> uuid.UUID | None:
+    """
+    Extract the `sid` (session id) claim from the current access token,
+    if present.
+
+    Used by GET /sessions (Task 10) purely to flag which item in the
+    list is "the session you're using right now" — it does NOT perform
+    authentication by itself (that's still get_current_user's job) and
+    deliberately swallows any decode failure rather than raising, since
+    a missing/invalid `sid` here should never be the reason a request
+    fails: get_current_user, run alongside this in the same endpoint,
+    is what actually enforces auth.
+    """
+    if not credentials:
+        return None
+    try:
+        payload = AuthService.decode_access_token(credentials.credentials)
+    except AppError:
+        return None
+    sid = payload.get("sid")
+    if not sid:
+        return None
+    try:
+        return uuid.UUID(sid)
+    except ValueError:
+        return None

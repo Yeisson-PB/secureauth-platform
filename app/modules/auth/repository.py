@@ -96,6 +96,25 @@ class AuthRepository:
         )
         await self.db.commit()
 
+    async def revoke_refresh_tokens_by_session(self, session_id: uuid.UUID) -> None:
+        """
+        Revoke all active refresh tokens tied to a specific session.
+
+        Used by SessionService.revoke_session() (Task 10) when a user
+        signs a single device out remotely: it must kill that device's
+        ability to mint new access tokens without touching the user's
+        other active sessions.
+        """
+        await self.db.execute(
+            update(RefreshToken)
+            .where(
+                RefreshToken.session_id == session_id,
+                RefreshToken.is_revoked.is_(False),
+            )
+            .values(is_revoked=True, revoked_at=datetime.now(UTC))
+        )
+        await self.db.commit()
+
     # --- Sessions ------------------------------
 
     async def create_session(

@@ -56,3 +56,4 @@ class TokenPayload(BaseModel):
     iat: str  # issued at
     jti: str  # JWT ID (for blacklisting)
     type: str  # "access" or "refresh"
+    sid: str | None = None  # session UUID
