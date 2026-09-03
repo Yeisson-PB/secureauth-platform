@@ -6,13 +6,13 @@
 
 ## 📍 Estado actual
 
-- **Última tarea completada:** Task 10 (Gestión de sesiones activas)
-- **Próxima tarea:** Task 11 (Rate limiting por IP y por usuario)
-- **Módulo:** 11 de 22
+- **Última tarea completada:** Task 11 (Rate limiting por IP y por usuario)
+- **Próxima tarea:** Task 12 (Detección de fuerza bruta y bloqueo progresivo)
+- **Módulo:** 12 de 22
 
 ---
 
-## ✅ Tareas completadas (1–10)
+## ✅ Tareas completadas (1–11)
 
 - [x] **Task 1** — Estructura base del repositorio y configuración inicial
   Estructura modular por dominio, configuración de UV, pre-commit hooks.
@@ -49,11 +49,25 @@
 - [x] **Task 10** — Gestión de sesiones activas (listar, revocar por dispositivo)
   Nuevo módulo `sessions` (router → service → repository, siguiendo el patrón de capas ya establecido): `GET /sessions` lista dispositivos conectados, `DELETE /sessions/{id}` revoca uno específico. Parser de User-Agent sin dependencias (`app/core/user_agent.py`) que ahora sí puebla `device_name`, `device_type`, `browser`, `os` en cada sesión — antes quedaban siempre en `NULL`. El JWT de acceso ahora incluye el claim `sid` (session id), lo que permite marcar `is_current: true` en el listado. Revocar una sesión invalida su refresh token (`AuthRepository.revoke_refresh_tokens_by_session`) pero **no** el access token ya emitido para esa sesión, que sigue vigente hasta su expiración natural (máx. 15 min) — misma filosofía fail-open documentada en Task 9, ahora aplicada aquí también. Validación de ownership devuelve 404 (no 403) para no filtrar existencia de sesiones ajenas.
 
+- [x] **Task 11** — Rate limiting por IP y por usuario (sliding window en Redis)
+  Middleware global (`app/core/rate_limit_middleware.py`) que corre en cada request (salvo `/health`, `/docs`, `/redoc`, `/openapi.json`) sin necesidad de aplicarlo endpoint por endpoint. Algoritmo sliding window log implementado con un Sorted Set de Redis y un script Lua ejecutado atómicamente vía `EVAL` (`app/core/rate_limiter.py`) — evita tanto el "burst" del fixed window en el borde de la ventana como una condición de carrera (TOCTOU) bajo requests concurrentes. Aplica el límite por IP siempre, y adicionalmente por usuario autenticado (extraído del JWT) cuando hay un Bearer token válido presente. Fail-open si Redis está caído, mismo criterio que Task 9/10. El middleware se desactiva automáticamente en entorno de test (`settings.is_test`) porque el transporte ASGI de test comparte una sola IP entre toda la suite; el comportamiento del rate limiting se cubre con tests dedicados (`tests/core/`) que prueban el algoritmo directamente y el middleware sobre una mini-app Starlette aislada. `CORSMiddleware` se agrega después de `RateLimitMiddleware` para quedar como capa más externa, así las respuestas 429 también llevan headers CORS correctos.
+  🐛 Bug corregido:
+  - `_extract_user_id()` en `rate_limit_middleware.py` asumía que el header `Authorization`
+    siempre era un string y llamaba `.startswith()` directamente sobre el resultado de
+    `request.headers.get(...)`, que es `None` cuando el header no está presente →
+    `AttributeError` en cada request sin token. Corregido con `if not auth_header or not auth_header.startswith(...)`.
+  - Tests de `tests/core/` corrían contra Redis real y compartían pool + claves entre
+    tests, causando dos fallas intermitentes: (a) pool de conexión ligado al event loop
+    de un test anterior (`pytest-asyncio` crea un loop nuevo por test función), causando
+    `RuntimeError: Event loop is closed` y activando fail-open silenciosamente; (b)
+    claves `ratelimit:*` no se limpiaban entre tests, así que contadores de un test
+    contaminaban el siguiente. Corregido con fixture `autouse` en `tests/core/conftest.py`
+    que cierra el pool y hace flush de claves `ratelimit:*` antes/después de cada test.
+
 ---
 
-## ⏳ Tareas pendientes (11–22)
+## ⏳ Tareas pendientes (12–22)
 
-- [ ] **Task 11** — Rate limiting por IP y por usuario (sliding window en Redis)
 - [ ] **Task 12** — Detección de fuerza bruta y bloqueo progresivo
 - [ ] **Task 13** — MFA con TOTP (activación, verificación, códigos de recuperación)
 - [ ] **Task 14** — OAuth2 con Google
@@ -72,15 +86,17 @@
 
 - **JWT:** firmado con RS256 (asimétrico), nunca HS256. Desde Task 10 incluye el claim opcional `sid` (session id).
 - **Refresh tokens:** se almacenan hasheados con SHA-256, nunca en texto plano.
-- **Errores:** formato RFC 7807 (Problem Details) en todos los endpoints.
+- **Errores:** formato RFC 7807 (Problem Details) en todos los endpoints, incluyendo el 429 de rate limit.
 - **Audit logs:** append-only, nunca se editan ni se borran.
 - **Primary keys:** UUID en todos los modelos.
-- **Capas:** router → service → repository → model, aplicado de forma consistente en todos los módulos de dominio (incluyendo el nuevo `sessions`).
+- **Capas:** router → service → repository → model, aplicado de forma consistente en todos los módulos de dominio.
 - **Estructura:** modular por dominio (auth, users, sessions, audit, admin).
-- **Redis:** un único connection pool compartido (`app/core/redis_client.py`), nunca conexiones ad-hoc por request. Blacklist de tokens con TTL = tiempo de vida restante del access token.
-- **Blacklist fail-open:** si Redis está caído, `is_token_blacklisted` devuelve `False` (se permite la request) para no tumbar toda la autenticación por una caída de Redis. Es una decisión explícita, documentada en código — no un descuido. Revisar si un modo fail-closed configurable por entorno debe añadirse en el hardening de seguridad (candidato para Task 20).
-- **Revocación de sesión ≠ invalidación inmediata del access token:** revocar una sesión mata su refresh token, pero el access token ya emitido sigue vivo hasta expirar (máx. 15 min). Trade-off aceptado explícitamente para no acoplar el módulo `sessions` a un mapeo jti↔session en Redis sin necesidad probada. Candidato a revisar en Task 20 si se requiere revocación instantánea.
-- **404 sobre 403 en checks de ownership:** tanto en `DELETE /sessions/{id}` (Task 10) como en el resto de la API, un recurso que no pertenece al usuario autenticado responde 404, nunca 403, para no confirmar la existencia de IDs ajenos.
+- **Redis:** un único connection pool compartido (`app/core/redis_client.py`), nunca conexiones ad-hoc por request. Reutilizado por blacklist (Task 9) y por rate limiting (Task 11).
+- **Blacklist y rate limit fail-open:** si Redis está caído, tanto `is_token_blacklisted` como `check_rate_limit` devuelven el resultado "permitir" en vez de tumbar la API. Decisión explícita y documentada en código, no un descuido. Candidato a revisar (modo fail-closed configurable) en el hardening de seguridad (Task 20).
+- **Revocación de sesión ≠ invalidación inmediata del access token:** revocar una sesión mata su refresh token, pero el access token ya emitido sigue vivo hasta expirar (máx. 15 min). Trade-off aceptado explícitamente.
+- **404 sobre 403 en checks de ownership:** un recurso que no pertenece al usuario autenticado responde 404, nunca 403, para no confirmar la existencia de IDs ajenos.
+- **Rate limiting sliding window, no fixed window:** implementado con Sorted Set + script Lua atómico, para evitar tanto el burst en el borde de la ventana como condiciones de carrera bajo concurrencia. Límite aplicado por IP siempre y por usuario autenticado adicionalmente.
+- **Middleware de rate limiting desactivado en `APP_ENV=test`:** decisión explícita y documentada en `RateLimitMiddleware`, no un `if` escondido — necesaria porque el transporte ASGI de test no expone una IP real por request.
 
 ---
 
@@ -92,9 +108,20 @@
 - **Rotación de refresh tokens:** si un token ya usado se reintenta usar, se interpreta como robo y se revocan TODOS los tokens del usuario (fail-secure).
 - **Redis en `get_current_user`:** si Redis está caído, se falla "open" (se permite la request) por disponibilidad. Decisión documentada explícitamente en `app/core/redis_client.py` desde Task 9.
 - **SQLAlchemy declarative `Base`:** `metadata` es un nombre de atributo reservado por la clase base (`Base.metadata`). Los modelos ORM y el código que los instancia deben usar nombres de campo que no choquen con esto — en `AuditLog` el atributo Python se llama `context` aunque la columna DB se siga llamando `metadata`.
-- **Bugs silenciosos por falta de cobertura de tests de integración:** un método inexistente (`_blacklist_access_token`) pasó desapercibido varias tareas porque ningún test hacía login → logout → intento de reuso del token. Regla general: todo flujo de seguridad crítico (login, logout, revocación) necesita un test que ejecute el flujo completo de punta a punta, no solo el "happy path" de cada endpoint por separado.
-- **Parseo de User-Agent sin dependencias externas:** el orden de los patrones de regex importa — UAs de Edge/Opera/Chrome-iOS contienen "Safari" y/o "Chrome" como substrings, así que los tokens más específicos (`Edg/`, `OPR/`, `CriOS/`) deben evaluarse antes que los genéricos (`Chrome/`, `Version/.*Safari`) o el resultado queda mal clasificado.
-- **JWT con claims opcionales:** agregar `sid` al payload del access token en Task 10 se hizo de forma retrocompatible (`sid: str | None = None` en `TokenPayload`) — tokens emitidos antes de este cambio simplemente no lo tendrán, y el código que lo consume (`get_current_session_id`) maneja su ausencia sin fallar.
+- **Bugs silenciosos por falta de cobertura de tests de integración:** un método inexistente (`_blacklist_access_token`) pasó desapercibido varias tareas porque ningún test hacía login → logout → intento de reuso del token. Regla general: todo flujo de seguridad crítico necesita un test que ejecute el flujo completo de punta a punta.
+- **Parseo de User-Agent sin dependencias externas:** el orden de los patrones de regex importa — UAs de Edge/Opera/Chrome-iOS contienen "Safari" y/o "Chrome" como substrings, así que los tokens más específicos deben evaluarse antes que los genéricos.
+- **JWT con claims opcionales:** agregar `sid` al payload del access token en Task 10 se hizo de forma retrocompatible (`sid: str | None = None`).
+- **Sliding window con Redis:** un fixed window (contador con `INCR` + `EXPIRE`) permite hasta 2x el límite en el borde de la ventana. Un Sorted Set con timestamps como score, podado en cada chequeo con `ZREMRANGEBYSCORE`, no tiene ese problema. El chequeo completo (podar + contar + agregar) debe ser atómico vía script Lua (`EVAL`), o dos requests concurrentes pueden ambas pasar el límite antes de que ninguna escriba.
+- **Testing de middlewares con estado compartido (Redis, rate limit):** cuando toda la suite de tests comparte una sola "identidad" de red (una IP falsa del transporte ASGI), un middleware de rate limiting global rompe tests no relacionados si no se desactiva explícitamente en entorno de test. La solución no es "no testear el middleware", sino aislar sus tests en una mini-app dedicada con límites propios.
+- **Tests contra Redis real necesitan limpieza explícita de estado:** un mock hubiera
+  evitado esto, pero al usar Redis real en tests (`tests/core/`) dos problemas de
+  aislamiento son fáciles de pasar por alto: (1) un pool de conexión singleton reutilizado
+  entre tests con event loops distintos (uno por test función en pytest-asyncio) revienta
+  con "Event loop is closed"; (2) las claves escritas por un test persisten en Redis y
+  contaminan el siguiente si comparten el mismo key pattern (en este caso, todos los tests
+  de middleware pegan a la misma IP falsa del transporte ASGI). Regla general: cualquier
+  test suite que hable con Redis real necesita un fixture `autouse` que resetee tanto la
+  conexión como el keyspace relevante antes de cada test, sin importar el orden de ejecución.
 
 ---
 
@@ -102,4 +129,4 @@
 
 _(Opcional: usa esta sección para dejar contexto rápido de dónde quedaste antes de cerrar una sesión de trabajo, por ejemplo "quedé revisando el TTL del blacklist, falta decidir si usar el exp del JWT o un valor fijo".)_
 
-Task 10 cerrada. Antes de Task 11, confirmar en local que `make test` pasa completo con los archivos nuevos/modificados de sesiones (`app/core/user_agent.py`, `app/modules/sessions/*`, `app/modules/auth/repository.py`, `app/modules/auth/service.py`, `app/modules/auth/dependencies.py`, `app/modules/auth/schemas.py`, `app/api/v1/router.py`, `tests/modules/sessions/*`) copiados sobre el repo real. Para Task 11 (rate limiting), reutilizar `app/core/redis_client.py` en vez de abrir otra conexión Redis independiente — mismo patrón que blacklist.
+Task 11 cerrada. Antes de Task 12, confirmar en local que `make test` pasa completo con los archivos nuevos/modificados (`app/core/rate_limiter.py`, `app/core/rate_limit_middleware.py`, `app/main.py`, `tests/core/*`) copiados sobre el repo real. Para Task 12 (fuerza bruta y bloqueo progresivo), el modelo `User` ya tiene `failed_login_attempts` y `locked_until`, y `AuthService.login()` ya incrementa `failed_login_attempts` en cada password incorrecto — pero nunca llama a `lock_user()` para fijar `locked_until` cuando se supera `MAX_LOGIN_ATTEMPTS`. Esa es la pieza que falta cerrar en Task 12, reutilizando `settings.MAX_LOGIN_ATTEMPTS` y `settings.LOCKOUT_DURATION_SECONDS` que ya existen en la configuración desde Task 5.
