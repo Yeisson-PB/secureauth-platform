@@ -14,6 +14,7 @@ import app.modules  # noqa: F401
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.exceptions import configure_exception_handlers
+from app.core.rate_limit_middleware import RateLimitMiddleware
 from app.core.redis_client import close_redis_pool
 
 
@@ -40,6 +41,14 @@ app = FastAPI(  # noqa: F811
     openapi_url="/openapi.json",
     lifespan=lifespan,
 )
+
+# Middleware order matters: Starlette runs the LAST-added middleware as
+# the OUTERMOST layer. RateLimitMiddleware is added first (inner layer)
+# so that CORSMiddleware, added last (outer layer), still wraps around
+# it — a 429 rate-limit response must still get proper CORS headers,
+# or browsers will report a confusing CORS error instead of the actual
+# 429 to the frontend.
+app.add_middleware(RateLimitMiddleware)
 
 # CORS Middleware para permitir solicitudes desde el frontend
 app.add_middleware(
