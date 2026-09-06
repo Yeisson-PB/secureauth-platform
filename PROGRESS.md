@@ -6,13 +6,13 @@
 
 ## 📍 Estado actual
 
-- **Última tarea completada:** Task 11 (Rate limiting por IP y por usuario)
-- **Próxima tarea:** Task 12 (Detección de fuerza bruta y bloqueo progresivo)
-- **Módulo:** 12 de 22
+- **Última tarea completada:** Task 12 (Detección de fuerza bruta y bloqueo progresivo)
+- **Próxima tarea:** Task 13 (MFA con TOTP)
+- **Módulo:** 13 de 22
 
 ---
 
-## ✅ Tareas completadas (1–11)
+## ✅ Tareas completadas (1–12)
 
 - [x] **Task 1** — Estructura base del repositorio y configuración inicial
   Estructura modular por dominio, configuración de UV, pre-commit hooks.
@@ -28,10 +28,10 @@
   Lint, SAST (Bandit/Semgrep), tests, build de Docker, escaneo semanal de CVEs (pip-audit), Gitleaks en PRs.
 
 - [x] **Task 5** — Configuración de variables de entorno con Pydantic Settings
-  Validación de llaves PEM, utilidades de seguridad (bcrypt, generación de tokens, SHA-256, comparación constant-time).
+  Validación de llaves PEM, utilidades de seguridad (bcrypt, generación de tokens, SHA-256, comparación constant-time). `MAX_LOGIN_ATTEMPTS` y `LOCKOUT_DURATION_SECONDS` ya existían en `Settings` desde esta tarea, pero no se usaban hasta Task 12.
 
 - [x] **Task 6** — Modelos de base de datos y migraciones con Alembic
-  Modelos async de SQLAlchemy: users, sessions, refresh_tokens, mfa_recovery_codes, audit_logs.
+  Modelos async de SQLAlchemy: users, sessions, refresh_tokens, mfa_recovery_codes, audit_logs. `failed_login_attempts` y `locked_until` ya existían en `User` desde esta tarea.
 
 - [x] **Task 7** — Módulo de usuarios: registro y validación de inputs
   Endpoint de registro con validación de fuerza de contraseña y normalización de email.
@@ -64,11 +64,17 @@
     contaminaban el siguiente. Corregido con fixture `autouse` en `tests/core/conftest.py`
     que cierra el pool y hace flush de claves `ratelimit:*` antes/después de cada test.
 
+- [x] **Task 12** — Detección de fuerza bruta y bloqueo progresivo
+  Cierra el ciclo de brute-force protection que quedó pendiente desde Task 5/6: `AuthService.login()` ahora sí llama a `UserRepository.lock_user()` cuando `failed_login_attempts` alcanza `settings.MAX_LOGIN_ATTEMPTS` (5), fijando `locked_until = now + settings.LOCKOUT_DURATION_SECONDS` (15 min). El intento que provoca el bloqueo devuelve `403 account_locked` en vez del genérico `401 invalid_credentials` — decisión de seguridad explícita: se acepta el leak de "este email existe" a cambio de que el dueño legítimo de la cuenta entienda por qué su password correcto dejó de funcionar (mismo tipo de trade-off enumeración-vs-usabilidad que 404-sobre-403 en sessions, resuelto en la dirección contraria aquí porque el público objetivo — el dueño de la cuenta — se beneficia más de la claridad).
+  🐛 Bugs corregidos antes de implementar:
+  - `AuthService.login()` incrementaba `failed_login_attempts` en cada password incorrecto desde Task 8, pero nunca comparaba el conteo contra `MAX_LOGIN_ATTEMPTS` ni llamaba a `lock_user()` — el bloqueo de 15 minutos nunca ocurría en la práctica pese a que la infraestructura (columnas, config) ya existía.
+  - `UserRepository.increment_failed_login_attempts()` hacía read-modify-write en Python (leer el conteo, sumar 1 en memoria, escribir) en vez de un `UPDATE` atómico — dos requests de login fallidos concurrentes podían leer el mismo valor inicial y perder un incremento entre sí, permitiendo a un atacante corriendo requests en paralelo hacer más intentos de los que `MAX_LOGIN_ATTEMPTS` debería permitir antes de activar el bloqueo. Corregido con `UPDATE ... SET failed_login_attempts = failed_login_attempts + 1 RETURNING ...`.
+  - Se identificó (antes de que llegara a producción) un tercer problema de diseño: si al expirar la ventana de bloqueo no se resetea el contador, el primer password incorrecto después de esos 15 minutos suma sobre el conteo viejo y re-bloquea la cuenta de inmediato — un usuario legítimo que se equivoca una sola vez al escribir su password quedaría efectivamente bloqueado para siempre. Resuelto detectando en `login()` cuando `locked_until` ya pasó y llamando a `reset_failed_attempts()` antes de evaluar el intento actual.
+
 ---
 
-## ⏳ Tareas pendientes (12–22)
+## ⏳ Tareas pendientes (13–22)
 
-- [ ] **Task 12** — Detección de fuerza bruta y bloqueo progresivo
 - [ ] **Task 13** — MFA con TOTP (activación, verificación, códigos de recuperación)
 - [ ] **Task 14** — OAuth2 con Google
 - [ ] **Task 15** — OAuth2 con GitHub
@@ -86,7 +92,7 @@
 
 - **JWT:** firmado con RS256 (asimétrico), nunca HS256. Desde Task 10 incluye el claim opcional `sid` (session id).
 - **Refresh tokens:** se almacenan hasheados con SHA-256, nunca en texto plano.
-- **Errores:** formato RFC 7807 (Problem Details) en todos los endpoints, incluyendo el 429 de rate limit.
+- **Errores:** formato RFC 7807 (Problem Details) en todos los endpoints, incluyendo el 429 de rate limit y el 403 de account lockout.
 - **Audit logs:** append-only, nunca se editan ni se borran.
 - **Primary keys:** UUID en todos los modelos.
 - **Capas:** router → service → repository → model, aplicado de forma consistente en todos los módulos de dominio.
@@ -97,6 +103,8 @@
 - **404 sobre 403 en checks de ownership:** un recurso que no pertenece al usuario autenticado responde 404, nunca 403, para no confirmar la existencia de IDs ajenos.
 - **Rate limiting sliding window, no fixed window:** implementado con Sorted Set + script Lua atómico, para evitar tanto el burst en el borde de la ventana como condiciones de carrera bajo concurrencia. Límite aplicado por IP siempre y por usuario autenticado adicionalmente.
 - **Middleware de rate limiting desactivado en `APP_ENV=test`:** decisión explícita y documentada en `RateLimitMiddleware`, no un `if` escondido — necesaria porque el transporte ASGI de test no expone una IP real por request.
+- **Bloqueo de cuenta revela existencia del email (403 account_locked), a diferencia de invalid_credentials genérico:** decisión explícita en Task 12. Se prioriza que el dueño legítimo entienda por qué su cuenta está bloqueada sobre ocultarle a un atacante que el email existe — resuelto en dirección opuesta al patrón 404-sobre-403 de sessions, con justificación documentada en el código.
+- **Contador de intentos fallidos vía UPDATE atómico, no read-modify-write:** cualquier contador que gatille un control de seguridad (lockout, rate limit) debe incrementarse con una expresión SQL atómica (`columna = columna + 1`) para no ser vulnerable a race conditions bajo requests concurrentes.
 
 ---
 
@@ -122,11 +130,13 @@
   de middleware pegan a la misma IP falsa del transporte ASGI). Regla general: cualquier
   test suite que hable con Redis real necesita un fixture `autouse` que resetee tanto la
   conexión como el keyspace relevante antes de cada test, sin importar el orden de ejecución.
+- **Contadores que gatillan controles de seguridad deben incrementarse atómicamente:** un patrón "SELECT, sumar en Python, UPDATE" en dos requests concurrentes puede perder incrementos (ambas leen el mismo valor de partida). Para un contador de intentos fallidos que alimenta un lockout, eso significa que un atacante con requests paralelos puede sobrepasar el límite configurado. La expresión SQL `columna = columna + 1` con `RETURNING` resuelve esto en un solo statement atómico, sin necesidad de un lock explícito ni una segunda query.
+- **Resetear contadores de tiempo-limitado al detectar que la ventana expiró, no solo al tener éxito:** si un contador se resetea únicamente en el "camino feliz" (login exitoso), un usuario que falla una sola vez justo después de que su bloqueo anterior expiró vuelve a acumular sobre el conteo viejo y se re-bloquea de inmediato. Hay que detectar explícitamente "la ventana ya pasó" y resetear antes de evaluar el intento actual, no solo tras un éxito.
 
 ---
 
 ## 🗒️ Notas de sesión
 
-_(Opcional: usa esta sección para dejar contexto rápido de dónde quedaste antes de cerrar una sesión de trabajo, por ejemplo "quedé revisando el TTL del blacklist, falta decidir si usar el exp del JWT o un valor fijo".)_
+_(Opcional: usa esta sección para dejar contexto rápido de dónde quedaste antes de cerrar una sesión de trabajo.)_
 
-Task 11 cerrada. Antes de Task 12, confirmar en local que `make test` pasa completo con los archivos nuevos/modificados (`app/core/rate_limiter.py`, `app/core/rate_limit_middleware.py`, `app/main.py`, `tests/core/*`) copiados sobre el repo real. Para Task 12 (fuerza bruta y bloqueo progresivo), el modelo `User` ya tiene `failed_login_attempts` y `locked_until`, y `AuthService.login()` ya incrementa `failed_login_attempts` en cada password incorrecto — pero nunca llama a `lock_user()` para fijar `locked_until` cuando se supera `MAX_LOGIN_ATTEMPTS`. Esa es la pieza que falta cerrar en Task 12, reutilizando `settings.MAX_LOGIN_ATTEMPTS` y `settings.LOCKOUT_DURATION_SECONDS` que ya existen en la configuración desde Task 5.
+Task 12 cerrada. Antes de Task 13, confirmar en local que `make test` pasa completo con los archivos nuevos/modificados (`app/modules/users/repository.py`, `app/modules/auth/service.py`, `tests/modules/auth/test_brute_force.py`) copiados sobre el repo real. Para Task 13 (MFA con TOTP), el modelo `User` ya tiene `mfa_secret` y `mfa_enabled`, y `UserRepository` ya tiene `set_mfa_secret()`, `enable_mfa()`, `disable_mfa()` desde Task 6 — falta el flujo completo: generar el secreto TOTP con `pyotp` (ya está en `pyproject.toml`), exponer un QR/URI compatible con Google Authenticator en `/auth/mfa/enable`, verificar el código en `/auth/mfa/verify`, generar y hashear códigos de recuperación (`MFARecoveryCode` ya existe en `app/modules/auth/model.py` desde Task 6), y decidir cómo se integra el chequeo de MFA dentro de `AuthService.login()` (¿login en dos pasos, con un token temporal intermedio, o un solo endpoint que acepta un `totp_code` opcional?). Esa decisión de flujo es lo primero que hay que definir al arrancar Task 13.

@@ -168,6 +168,19 @@ class AuthService:
                 ),
             )
 
+        # A previous lockout window may have already elapsed (locked_until
+        # is in the past). If so, start the failed-attempt counter fresh
+        # before evaluating this attempt. Without this reset, a single
+        # wrong password entered right after the lock expires would add
+        # on top of the stale pre-lock count and immediately re-lock the
+        # account for another full window — effectively making the
+        # lockout indefinite for a legitimate user who mistypes their
+        # password even once right after being unlocked.
+        if user.locked_until and user.locked_until <= datetime.now(UTC):
+            await self.user_repo.reset_failed_attempts(user.id)
+            user.failed_login_attempts = 0
+            user.locked_until = None
+
         # --- 3. Verify password ------------------------
         from app.core.security import verify_password
 
@@ -175,11 +188,50 @@ class AuthService:
             password, user.hashed_password
         ):
 
-            await self.user_repo.increment_failed_attempts(user.id)
+            attempts = await self.user_repo.increment_failed_login_attempts(user.id)
+
+            if attempts >= settings.MAX_LOGIN_ATTEMPTS:
+                locked_until = datetime.now(UTC) + timedelta(
+                    seconds=settings.LOCKOUT_DURATION_SECONDS
+                )
+                await self.user_repo.lock_user(user.id, locked_until)
+                await self._log_failed_login(
+                    email=email,
+                    ip_address=ip_address,
+                    reason="account_locked_max_attempts_exceeded",
+                    user_id=user.id,
+                )
+                # SECURITY TRADE-OFF: telling the caller the account is now
+                # locked (instead of the generic invalid_credentials used
+                # everywhere else) leaks that this email belongs to a real
+                # account — a nonexistent email (step 1 above) can never
+                # produce this response, so an attacker who sees
+                # account_locked learns the account exists. We accept this
+                # deliberately: the alternative is silently locking the
+                # account in the background while still returning
+                # invalid_credentials, which leaves the legitimate owner
+                # with no explanation for why their correct password
+                # suddenly stops working. This is the same
+                # enumeration-vs-usability call already made for session
+                # ownership checks (404-over-403) elsewhere in this
+                # codebase, resolved in the other direction here because
+                # the account owner benefits more from clarity than an
+                # anonymous attacker gains from the leak.
+                raise AppError(
+                    status_code=403,
+                    error_code="account_locked",
+                    title="Account Temporarily Locked",
+                    detail=(
+                        f"Too many failed attempts. Your account has been "
+                        f"locked for "
+                        f"{settings.LOCKOUT_DURATION_SECONDS // 60} minutes."
+                    ),
+                )
+
             await self._log_failed_login(
                 email=email,
                 ip_address=ip_address,
-                reason="wrong_password",
+                reason="invalid_password",
                 user_id=user.id,
             )
             raise AppError(

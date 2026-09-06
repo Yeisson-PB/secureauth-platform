@@ -82,13 +82,30 @@ class UserRepository:
         await self.db.commit()
 
     async def increment_failed_login_attempts(self, user_id: uuid.UUID) -> int:
-        """Increment failed login attempts for a user."""
-        user = await self.get_by_id(user_id)
-        if not user:
-            return 0
-        user.failed_login_attempts += 1
+        """
+        Atomically increment failed_login_attempts and return the new value.
+
+        SECURITY: this uses a single SQL UPDATE ... SET
+        failed_login_attempts = failed_login_attempts + 1 (a database-side
+        increment expression) instead of reading the current value in
+        Python, adding 1, and writing it back. The read-modify-write
+        pattern is vulnerable to a race condition: two concurrent failed
+        login requests could both read the same starting count and each
+        write back count + 1, silently losing one of the increments. For
+        a counter that gates account lockout, that race would let an
+        attacker running requests in parallel make more password guesses
+        than MAX_LOGIN_ATTEMPTS is supposed to allow before the lockout
+        kicks in. RETURNING lets us read back the post-increment value
+        from the same atomic statement instead of doing a second query.
+        """
+        result = await self.db.execute(
+            update(User)
+            .where(User.id == user_id)
+            .values(failed_login_attempts=User.failed_login_attempts + 1)
+            .returning(User.failed_login_attempts)
+        )
         await self.db.commit()
-        return user.failed_login_attempts
+        return result.scalar_one()
 
     async def increment_failed_attempts(self, user_id: uuid.UUID) -> int:
         """Backward-compatible alias used by the auth service."""
