@@ -5,7 +5,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.modules.auth.model import RefreshToken
+from app.modules.auth.model import MFARecoveryCode, RefreshToken
 from app.modules.sessions.model import Session
 
 
@@ -162,5 +162,67 @@ class AuthRepository:
             update(Session)
             .where(Session.user_id == user_id, Session.is_active.is_(True))
             .values(is_active=False, revoked_at=datetime.now(UTC))
+        )
+        await self.db.commit()
+
+    # --- MFA Recovery Codes ------------------------------
+
+    async def create_recovery_codes(
+        self, user_id: uuid.UUID, code_hashes: list[str]
+    ) -> None:
+        """
+        Persist a fresh batch of hashed MFA recovery codes.
+
+        Called once, right after MFA is confirmed (MFAService.confirm()).
+        Only the SHA-256 hashes are ever written — the raw codes are
+        shown to the user exactly once, in the API response, and never
+        touch the database or logs.
+        """
+        for code_hash in code_hashes:
+            self.db.add(MFARecoveryCode(user_id=user_id, code_hash=code_hash))
+        await self.db.commit()
+
+    async def get_active_recovery_codes(
+        self, user_id: uuid.UUID
+    ) -> list[MFARecoveryCode]:
+        """Return all unused recovery codes for a user."""
+        result = await self.db.execute(
+            select(MFARecoveryCode).where(
+                MFARecoveryCode.user_id == user_id,
+                MFARecoveryCode.is_used.is_(False),
+            )
+        )
+        return result.scalars().all()
+
+    async def mark_recovery_code_used(self, code_id: uuid.UUID) -> None:
+        """
+        Mark a single recovery code as consumed.
+
+        Codes are marked used, never deleted — consistent with the
+        refresh-token revocation pattern elsewhere in this repository —
+        so a used code still shows up if this account is ever audited.
+        """
+        await self.db.execute(
+            update(MFARecoveryCode)
+            .where(MFARecoveryCode.id == code_id)
+            .values(is_used=True, used_at=datetime.now(UTC))
+        )
+        await self.db.commit()
+
+    async def invalidate_recovery_codes(self, user_id: uuid.UUID) -> None:
+        """
+        Mark every outstanding recovery code for a user as used.
+
+        Called when MFA is disabled (MFAService.disable()): none of the
+        previously issued codes should still be redeemable once MFA
+        itself is off and a fresh secret would be generated on re-enrollment.
+        """
+        await self.db.execute(
+            update(MFARecoveryCode)
+            .where(
+                MFARecoveryCode.user_id == user_id,
+                MFARecoveryCode.is_used.is_(False),
+            )
+            .values(is_used=True, used_at=datetime.now(UTC))
         )
         await self.db.commit()

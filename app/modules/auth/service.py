@@ -12,7 +12,7 @@ from app.core.redis_client import blacklist_token
 from app.core.security import generate_secure_token, hash_token
 from app.core.user_agent import parse_user_agent
 from app.modules.auth.repository import AuthRepository
-from app.modules.auth.schemas import TokenResponse
+from app.modules.auth.schemas import MFARequiredResponse, TokenResponse
 from app.modules.users.model import User
 from app.modules.users.repository import UserRepository
 
@@ -105,6 +105,70 @@ class AuthService:
 
         return payload
 
+    @staticmethod
+    def create_mfa_token(user_id: uuid.UUID) -> tuple[str, str]:
+        """
+        Create a short-lived, single-purpose JWT representing a user who
+        has passed the password check but still owes a TOTP (or
+        recovery) code (Task 13, two-step MFA login).
+
+        This is deliberately NOT a valid access token: `type` is
+        "mfa_pending" instead of "access", so decode_access_token() (and
+        therefore get_current_user()) rejects it even if someone tries
+        to send it as a Bearer token. Its only valid use is as the
+        `mfa_token` field of POST /auth/mfa/verify — and only once, since
+        MFAService.verify() blacklists the jti immediately on success,
+        the same Redis blacklist used for logout (Task 9).
+        """
+        jti = str(uuid.uuid4())
+        now = datetime.now(UTC)
+        expire = now + timedelta(minutes=settings.MFA_TOKEN_EXPIRE_MINUTES)
+        payload = {
+            "sub": str(user_id),
+            "exp": int(expire.timestamp()),
+            "iat": int(now.timestamp()),
+            "jti": jti,
+            "type": "mfa_pending",
+        }
+        token = jwt.encode(
+            payload, settings.JWT_PRIVATE_KEY, algorithm=settings.JWT_ALGORITHM
+        )
+        return token, jti
+
+    @staticmethod
+    def decode_mfa_token(token: str) -> dict:
+        """
+        Decode and verify an mfa_token issued by create_mfa_token().
+
+        Raises:
+            AppError(401): invalid/expired signature, or a token that is
+                structurally valid but not of type "mfa_pending" (e.g. a
+                normal access token passed here by mistake).
+        """
+        try:
+            payload = jwt.decode(
+                token,
+                settings.JWT_PUBLIC_KEY,
+                algorithms=[settings.JWT_ALGORITHM],
+            )
+        except PyJWTError as e:
+            raise AppError(
+                status_code=401,
+                error_code="invalid_mfa_token",
+                title="Invalid MFA Token",
+                detail="Thhe MFA token is invalid or has expired. Please log in again.",
+            ) from e
+
+        if payload.get("type") != "mfa_pending":
+            raise AppError(
+                status_code=401,
+                error_code="invalid_mfa_token",
+                title="Invalid MFA Token",
+                detail="Expected a pending-MFA token.",
+            )
+
+        return payload
+
     # --- Login ------------------------------
 
     async def login(
@@ -113,9 +177,14 @@ class AuthService:
         password: str,
         ip_address: str | None = None,
         user_agent: str | None = None,
-    ) -> TokenResponse:
+    ) -> TokenResponse | MFARequiredResponse:
         """
         Authenticate user with email/password and issue token pair.
+
+        If the account has MFA enabled, this returns a MFARequiredResponse
+        (a short-lived mfa_token) instead of the final token pair — the
+        caller must complete the flow via POST /auth/mfa/verify with a
+        TOTP or recovery code before receiving real tokens.
 
         Security measures:
         - constant-time password comparison (bcrypt)
@@ -241,7 +310,25 @@ class AuthService:
                 detail="The email or password you entered is incorrect.",
             )
 
-        # --- 4. Issue tokens ------------------------
+        # --- 4. MFA check ------------------------------
+        # Password is correct at this point. If MFA is enabled, do NOT
+        # issue real tokens yet — hand back a single-use, short-lived
+        # mfa_token instead, and let POST /auth/mfa/verify finish the job.
+        if user.mfa_enabled:
+            mfa_token, jti = self.create_mfa_token(user.id)
+            await self._write_audit_log(
+                user_id=user.id,
+                action="user.login.mfa_required",
+                description="Password verified; awaiting MFA code",
+                ip_address=ip_address,
+                status="success",
+            )
+            return MFARequiredResponse(
+                mfa_token=mfa_token,
+                expires_in=settings.MFA_TOKEN_EXPIRE_MINUTES * 60,
+            )
+
+        # --- 5. Issue tokens ------------------------
         return await self._issue_token_pair(
             user=user,
             ip_address=ip_address,

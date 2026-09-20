@@ -232,14 +232,23 @@ class Settings(BaseSettings):
     GITHUB_REDIRECT_URI: str = "http://localhost:8000/api/v1/auth/oauth/github/callback"
 
     # ── MFA ─────────────────────────────────────────────────────────────────
-    MFA_ISSUER: str = Field(
+    MFA_ISSUER_NAME: str = Field(
         default="SecureAuth",
-        description="Issuer name for MFA TOTP tokens.",
+        description="Issuer name shown inside authenticator apps for MFA TOTP tokens.",
     )
 
     MFA_RECOVERY_CODES_COUNT: int = Field(
         default=10,
         description="Number of one-time recovery codes to" " generate for MFA.",
+    )
+
+    MFA_TOKEN_EXPIRE_MINUTES: int = Field(
+        default=5,
+        description=(
+            "Minutes a pending-MFA token (issued after the password check, "
+            "before the TOTP/recovery code is submitted) remains valid. "
+            "Kept short since it only bridges the two login steps."
+        ),
     )
 
     # ── Email (optional - for future password reset) ──────────────────────
